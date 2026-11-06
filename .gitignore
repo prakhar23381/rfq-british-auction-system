@@ -1,0 +1,34 @@
+# OS / editors
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+coverage.xml
+celerybeat-schedule*
+
+# Node
+node_modules/
+dist/
+coverage/
+*.log
+.vite/
+
+# Assignment source files (kept locally, not part of the submission repo)
+*.pdf
