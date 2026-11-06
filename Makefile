@@ -57,8 +57,8 @@ migrate: ## Apply migrations to the dev DB
 migration: ## Autogenerate a migration: make migration m="message"
 	cd $(BACKEND) && .venv/bin/alembic revision --autogenerate -m "$(m)"
 
-seed: ## Seed demo data
-	cd $(BACKEND) && $(abspath $(PY)) -m scripts.seed
+seed: ## Seed demo data (make seed args=--reset to wipe first)
+	cd $(BACKEND) && .venv/bin/python -m scripts.seed $(args)
 
 # ---- Quality ----------------------------------------------------------------
 test: ## Run backend tests
@@ -72,7 +72,7 @@ fmt: ## Auto-format backend
 	cd $(BACKEND) && .venv/bin/ruff check --fix . && .venv/bin/ruff format .
 
 typecheck: ## mypy (backend) + tsc (frontend)
-	cd $(BACKEND) && .venv/bin/mypy app
+	cd $(BACKEND) && .venv/bin/mypy app scripts
 	cd $(FRONTEND) && npm run typecheck
 
 check: lint typecheck test ## Everything CI runs

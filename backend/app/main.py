@@ -1,13 +1,22 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import health
+from app.api.errors import register_exception_handlers
+from app.api.routes import health, meta, users
 from app.config import get_settings
+from app.core.logging import configure_logging
 
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    app = FastAPI(title=settings.app_name, version="0.1.0")
+    configure_logging(settings.log_level)
+
+    app = FastAPI(
+        title=settings.app_name,
+        version="0.1.0",
+        description="RFQ system with British Auction bidding. Mutating endpoints take the "
+        "acting user's id in the `X-User-Id` header (see `GET /api/users`).",
+    )
 
     app.add_middleware(
         CORSMiddleware,
@@ -16,8 +25,10 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    register_exception_handlers(app)
 
-    app.include_router(health.router, prefix="/api")
+    for router in (health.router, meta.router, users.router):
+        app.include_router(router, prefix="/api")
     return app
 
 

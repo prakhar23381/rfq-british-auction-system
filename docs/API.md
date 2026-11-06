@@ -27,13 +27,15 @@ Base URL: `http://localhost:8000`. The interactive OpenAPI reference is served a
 |---|---|---|
 | 401 | `UNAUTHENTICATED` | `X-User-Id` missing or unknown |
 | 403 | `FORBIDDEN` | Wrong role (e.g. a supplier creating an RFQ, a buyer bidding) |
-| 404 | `NOT_FOUND` | RFQ does not exist |
+| 404 | `NOT_FOUND` | RFQ or route does not exist |
+| 405 | `METHOD_NOT_ALLOWED` | HTTP method not supported on the route |
 | 409 | `DUPLICATE_REFERENCE` | Reference ID already used |
 | 409 | `AUCTION_NOT_STARTED` | Bid before the start time |
 | 409 | `AUCTION_CLOSED` | Bid at or after the current close (or forced close) |
 | 422 | `VALIDATION_ERROR` | Invalid input; `details` lists the fields |
 | 422 | `FORCED_CLOSE_NOT_AFTER_CLOSE` | Forced close is not later than bid close |
 | 422 | `BID_NOT_LOWER` | Supplier's new bid is not lower than their previous bid |
+| 500 | `INTERNAL_ERROR` | Unexpected server error (details are logged, not returned) |
 
 ## Endpoints
 
@@ -42,6 +44,7 @@ Base URL: `http://localhost:8000`. The interactive OpenAPI reference is served a
 | GET | `/api/health` | — | Liveness, database and Redis status |
 | GET | `/api/meta/time` | — | Server time |
 | GET | `/api/users` | — | Seeded users (for choosing the acting user) |
+| GET | `/api/users/me` | Any | The user identified by `X-User-Id` |
 | POST | `/api/rfqs` | Buyer | Create an RFQ with British auction settings |
 | GET | `/api/rfqs` | — | Auction listing |
 | GET | `/api/rfqs/{id}` | — | Auction details with ranking and stats |

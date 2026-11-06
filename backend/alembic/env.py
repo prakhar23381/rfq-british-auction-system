@@ -9,7 +9,8 @@ from app.db import Base
 
 config = context.config
 
-if config.config_file_name is not None:
+# Programmatic callers (the test suite) set configure_logger=False to keep their logging setup.
+if config.config_file_name is not None and config.attributes.get("configure_logger", True):
     fileConfig(config.config_file_name)
 
 # Allow `alembic -x db_url=...` (used for the test DB); default to app settings.
