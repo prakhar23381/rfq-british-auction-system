@@ -1,12 +1,16 @@
 """Request schema for submitting a bid (quote). Rules that need the RFQ or the supplier's
 previous bid (quote validity vs pickup date, "must be lower") are checked by the bid service."""
 
-from datetime import date
+import uuid
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_core import PydanticCustomError
+
+from app.schemas.common import ApiModel, ServerTimed
+from app.schemas.party import PartyOut
 
 Money = Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=2)]
 
@@ -31,3 +35,24 @@ class BidCreate(BaseModel):
         if self.total_amount <= 0:
             raise PydanticCustomError("zero_total", "Total charges must be greater than zero")
         return self
+
+
+class BidOut(ApiModel):
+    id: uuid.UUID
+    supplier: PartyOut
+    carrier_name: str
+    freight_charges: Decimal
+    origin_charges: Decimal
+    destination_charges: Decimal
+    total_amount: Decimal
+    currency: str
+    transit_time_days: int
+    quote_validity_date: date
+    notes: str | None
+    is_latest: bool = Field(description="False once the supplier submitted a lower bid")
+    rank_at_submission: int | None
+    submitted_at: datetime
+
+
+class BidListResponse(ServerTimed):
+    items: list[BidOut]

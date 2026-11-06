@@ -33,20 +33,24 @@ def make_rfq(
     close: datetime = T0 + timedelta(hours=1),
     forced: datetime = T0 + timedelta(hours=2),
     current_close: datetime | None = None,
+    extension_count: int = 0,
+    name: str = "Test lane",
+    reference_id: str | None = None,
     x: int = 10,
     y: int = 5,
     trigger: TriggerType = TriggerType.L1_CHANGE,
 ) -> Rfq:
     rfq = Rfq(
-        reference_id=f"RFQ-T-{uuid.uuid4().hex[:6].upper()}",
-        name="Test lane",
+        reference_id=reference_id or f"RFQ-T-{uuid.uuid4().hex[:6].upper()}",
+        name=name,
         buyer_id=buyer.id,
         pickup_date=date(2026, 12, 1),
         bid_start_at=start,
         bid_close_at=close,
         current_close_at=current_close or close,
         forced_close_at=forced,
-        status=AuctionStatus.SCHEDULED,
+        status=AuctionStatus.SCHEDULED,  # stored status; APIs derive it from the times
+        extension_count=extension_count,
         auction_config=AuctionConfig(
             trigger_window_minutes=x, extension_duration_minutes=y, trigger_type=trigger
         ),
@@ -65,6 +69,7 @@ def make_bid(
     origin: str = "100.00",
     destination: str = "50.00",
     is_latest: bool = True,
+    submitted_at: datetime | None = None,
 ) -> Bid:
     bid = Bid(
         rfq_id=rfq.id,
@@ -76,6 +81,7 @@ def make_bid(
         transit_time_days=20,
         quote_validity_date=date(2026, 12, 31),
         is_latest=is_latest,
+        submitted_at=submitted_at or T0,
     )
     db.add(bid)
     db.flush()

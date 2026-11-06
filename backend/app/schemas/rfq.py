@@ -1,17 +1,21 @@
-"""Request schemas for creating an RFQ. Response schemas are added with the RFQ endpoints.
+"""RFQ request and response schemas.
 
-Cross-field rules are field validators (not one model validator) so each error points at
-the field the user must fix. Fields are declared in dependency order because a validator
-can only see fields declared before it. "Start must not be in the past" needs the clock,
-so the RFQ service checks it.
+Request: cross-field rules are field validators (not one model validator) so each error
+points at the field the user must fix. Fields are declared in dependency order because a
+validator can only see fields declared before it. "Start must not be in the past" needs the
+clock, so the RFQ service checks it.
 """
 
+import uuid
 from datetime import UTC, date, datetime
+from decimal import Decimal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 from pydantic_core import PydanticCustomError
 
-from app.domain.enums import TriggerType
+from app.domain.enums import AuctionStatus, TriggerType
+from app.schemas.common import ApiModel, ServerTimed
+from app.schemas.party import PartyOut
 
 REFERENCE_ID_PATTERN = r"^[A-Z0-9-]{3,30}$"
 
@@ -84,3 +88,93 @@ class RfqCreate(BaseModel):
                 "pickup_before_close", "Pickup / service date cannot be before the bid close date"
             )
         return value
+
+
+# ---------------------------------------------------------------------------
+# Responses
+# ---------------------------------------------------------------------------
+
+
+class AuctionConfigOut(ApiModel):
+    trigger_window_minutes: int
+    extension_duration_minutes: int
+    trigger_type: TriggerType
+
+
+class RfqOut(ApiModel):
+    id: uuid.UUID
+    reference_id: str
+    name: str
+    status: AuctionStatus = Field(description="Derived from the times at response time")
+    pickup_date: date
+    bid_start_at: datetime
+    bid_close_at: datetime = Field(description="Original close; never changes")
+    current_close_at: datetime = Field(description="Close after extensions")
+    forced_close_at: datetime
+    extension_count: int
+    closed_at: datetime | None
+    created_at: datetime
+    buyer: PartyOut
+
+
+class RankedBidOut(ApiModel):
+    rank: int
+    rank_label: str
+    bid_id: uuid.UUID
+    supplier: PartyOut
+    carrier_name: str
+    freight_charges: Decimal
+    origin_charges: Decimal
+    destination_charges: Decimal
+    total_amount: Decimal
+    currency: str
+    transit_time_days: int
+    quote_validity_date: date
+    notes: str | None
+    submitted_at: datetime
+    revision_count: int = Field(description="How many bids this supplier has submitted")
+
+
+class RfqStats(ApiModel):
+    bid_count: int
+    supplier_count: int
+    extension_count: int
+    total_extended_minutes: int
+    first_l1_amount: Decimal | None = Field(description="Total of the first bid placed")
+    current_l1_amount: Decimal | None
+    savings_pct: Decimal | None = Field(description="Drop from first to current L1, in %")
+
+
+class RfqDetail(ServerTimed):
+    rfq: RfqOut
+    auction_config: AuctionConfigOut
+    ranking: list[RankedBidOut]
+    stats: RfqStats
+
+
+class LowestBidOut(ApiModel):
+    amount: Decimal
+    currency: str
+    supplier_name: str
+
+
+class RfqListItem(ApiModel):
+    id: uuid.UUID
+    reference_id: str
+    name: str
+    status: AuctionStatus
+    lowest_bid: LowestBidOut | None
+    bid_start_at: datetime
+    bid_close_at: datetime
+    current_close_at: datetime
+    forced_close_at: datetime
+    extension_count: int
+    bid_count: int
+    supplier_count: int
+
+
+class RfqListResponse(ServerTimed):
+    items: list[RfqListItem]
+    page: int
+    page_size: int
+    total: int

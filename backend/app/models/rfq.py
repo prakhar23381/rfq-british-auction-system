@@ -10,6 +10,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Sequence,
     String,
     func,
     text,
@@ -22,6 +23,9 @@ from app.models.base import created_at_column, pg_enum, uuid_pk
 
 if TYPE_CHECKING:
     from app.models.user import User
+
+# Numbers generated reference IDs (RFQ-YYYY-NNNN). Created by migration 3295d5dfa131.
+RFQ_REFERENCE_SEQ = Sequence("rfq_reference_seq", metadata=Base.metadata)
 
 
 class Rfq(Base):

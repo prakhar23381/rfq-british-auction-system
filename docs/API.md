@@ -48,7 +48,7 @@ Base URL: `http://localhost:8000`. The interactive OpenAPI reference is served a
 | POST | `/api/rfqs` | Buyer | Create an RFQ with British auction settings |
 | GET | `/api/rfqs` | — | Auction listing |
 | GET | `/api/rfqs/{id}` | — | Auction details with ranking and stats |
-| GET | `/api/rfqs/{id}/bids` | — | Bids; `?history=true` includes superseded revisions |
+| GET | `/api/rfqs/{id}/bids` | — | Latest bid per supplier in rank order; `?history=true` returns every bid (including superseded revisions), newest first |
 | POST | `/api/rfqs/{id}/bids` | Supplier | Submit a bid |
 | GET | `/api/rfqs/{id}/activity` | — | Activity log, newest first |
 | WS | `/ws` | — | Live events |
@@ -114,6 +114,7 @@ Query parameters: `status` (`SCHEDULED`, `ACTIVE`, `CLOSED`, `FORCE_CLOSED`), `s
     "id": "6f1c…", "reference_id": "RFQ-2026-0001", "name": "…", "status": "ACTIVE",
     "pickup_date": "2026-11-20", "bid_start_at": "…", "bid_close_at": "…",
     "current_close_at": "…", "forced_close_at": "…", "extension_count": 2,
+    "closed_at": null, "created_at": "…",
     "buyer": { "id": "…", "name": "…", "company_name": "…" }
   },
   "auction_config": { "trigger_window_minutes": 10, "extension_duration_minutes": 5, "trigger_type": "L1_CHANGE" },
@@ -124,7 +125,7 @@ Query parameters: `status` (`SCHEDULED`, `ACTIVE`, `CLOSED`, `FORCE_CLOSED`), `s
       "carrier_name": "Swift Ocean Line",
       "freight_charges": "110000.00", "origin_charges": "8000.00", "destination_charges": "7000.00",
       "total_amount": "125000.00", "currency": "INR",
-      "transit_time_days": 24, "quote_validity_date": "2026-11-30",
+      "transit_time_days": 24, "quote_validity_date": "2026-11-30", "notes": null,
       "submitted_at": "…", "revision_count": 3
     }
   ],
@@ -135,6 +136,14 @@ Query parameters: `status` (`SCHEDULED`, `ACTIVE`, `CLOSED`, `FORCE_CLOSED`), `s
   "server_time": "…"
 }
 ```
+
+- `status` is derived from the times on every request, so it is correct even before a background task updates the stored status.
+- Ranking: each supplier's latest bid, lowest total first; equal totals rank by submission time.
+- `first_l1_amount` is the total of the first bid placed; `savings_pct` is the drop from it to the current L1.
+
+### Bids — `GET /api/rfqs/{id}/bids`
+
+Returns `{ "items": [Bid], "server_time": "…" }`. Each bid has the quote fields above plus `id`, `supplier`, `is_latest` (false once the supplier submitted a lower bid), `rank_at_submission` and `submitted_at`.
 
 ### Submit a bid — `POST /api/rfqs/{id}/bids`
 
