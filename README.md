@@ -6,6 +6,12 @@ A simplified RFQ (Request for Quotation) platform with **British Auction** biddi
 
 > 🚧 Work in progress.
 
+## Design documents
+
+- [High-level design](docs/HLD.md): architecture, auction rules, key flows, assumptions
+- [Database schema](docs/SCHEMA.md): ER diagram, tables, constraints, indexes, DDL
+- [API reference](docs/API.md): REST endpoints, error codes, WebSocket events
+
 ## Prerequisites
 
 - Python 3.12+
