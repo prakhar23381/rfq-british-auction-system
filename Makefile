@@ -15,7 +15,7 @@ help: ## Show available commands
 
 # ---- Infrastructure -------------------------------------------------------
 up: ## Start Postgres + Redis (docker compose) and wait until healthy
-	docker compose up -d --wait
+	docker compose up -d --wait postgres redis
 
 down: ## Stop containers (data volume is kept)
 	docker compose down

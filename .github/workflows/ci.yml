@@ -125,3 +125,21 @@ jobs:
           name: playwright-report
           path: frontend/playwright-report
           retention-days: 7
+
+  docker:
+    # The one-command setup from the README: build every image, start the stack, smoke-test it.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: docker compose up --build
+        run: docker compose up --build --detach --wait --wait-timeout 300
+      - name: Smoke test through nginx
+        run: |
+          curl -fsS http://localhost:8080/ | grep -q '<div id="root">'
+          curl -fsS http://localhost:8080/rfqs/some-client-route | grep -q '<div id="root">'
+          curl -fsS http://localhost:8080/api/health | tee /dev/stderr | grep -q '"status":"ok"'
+          test "$(curl -fsS http://localhost:8080/api/rfqs | jq '.total')" = 5
+      - name: Logs
+        if: always()
+        run: docker compose logs --no-color | tail -200

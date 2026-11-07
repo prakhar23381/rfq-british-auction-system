@@ -9,7 +9,7 @@ How the British Auction RFQ system is tested, how to run each suite, and where e
 | Model-based | Hypothesis stateful testing | 60 random auctions × 25 steps | Random bid sequences against an independent model of the rules |
 | API fuzzing | Hypothesis | ~1,000 requests per run | Malformed and nearly valid requests never cause a 500 |
 | Frontend | Vitest + Testing Library | 177 | Components, forms, time/money maths, live-update logic with a fake WebSocket |
-| End to end | Playwright (Chromium) | 7 | The full stack in real browsers: buyer and suppliers in separate windows, live updates, force close, phone layout |
+| End to end | Playwright (Chromium) | 8 | The full stack in real browsers: buyer and suppliers in separate windows, live updates, force close, phone and laptop layouts |
 | Accessibility | axe-core in Playwright | every page | No serious or critical WCAG 2.1 AA violations |
 
 Coverage: backend 98% (`app` and `scripts`), frontend 97% of statements. CI enforces a frontend floor of 95% statements, 90% branches.
@@ -21,6 +21,8 @@ make test        # backend: unit + integration + model-based + fuzzing (needs `m
 make test-web    # frontend unit tests
 cd frontend && npm run coverage   # with coverage report and thresholds
 make e2e         # browser tests: needs `make api`, `make worker`, `make beat` and a seeded DB
+# or against the Docker stack (docker compose up --build):
+cd frontend && E2E_BASE_URL=http://localhost:8080 E2E_API_URL=http://localhost:8080 npm run e2e
 make check       # everything CI runs except e2e
 ```
 
@@ -98,6 +100,7 @@ Whenever a break survived, I added a test for it.
 | Playwright lifecycle test | A capped extension shorter than a minute was logged as "extended by 0 min". Durations are now exact ("40 s"), and stats include `total_extended_seconds` |
 | axe accessibility check | White text on the primary button had 3.6:1 contrast. The button fill is now deeper (4.9:1, WCAG AA) |
 | Browser screenshots | A see-through user menu, the header wrapping on phones, and the ranking table overflowing at 1440 px |
+| Playwright width test (Stage 14) | Beside the bid form, the ranking table was cut off at 1024–1440 px (by up to 407 px). It now switches between table and cards by the space it actually has (a container query), and folds origin and destination under freight when space is tight |
 
 ## Test matrix traceability
 
@@ -145,7 +148,7 @@ The scenario matrix from the plan, with where each row is tested.
 | Bid form rules and money in paise | `features/bid/bidForm.test.ts` |
 | Server clock and countdown ticking | `lib/serverClock.test.ts`, `hooks/useCountdown.test.tsx` |
 | WebSocket reconnect, resubscribe and resync | `realtime/wsClient.test.ts` |
-| Two windows live; force close live; 390 px; accessibility | `e2e/auction-flow.spec.ts`, `e2e/lifecycle.spec.ts`, `e2e/pages.spec.ts`, `e2e/accessibility.spec.ts` |
+| Two windows live; force close live; 390 px; ranking fits at 1024–1920 px; accessibility | `e2e/auction-flow.spec.ts`, `e2e/lifecycle.spec.ts`, `e2e/pages.spec.ts`, `e2e/accessibility.spec.ts` |
 
 ## Demo tooling
 

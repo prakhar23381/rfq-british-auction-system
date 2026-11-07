@@ -188,6 +188,16 @@ Start and close entries are dated at the scheduled start or close time, not at t
 
 Queuing a job is best effort. If Redis is down when an RFQ is created or extended, the request still succeeds and the sweeper performs the transition.
 
+### Deployment
+
+`docker compose up --build` runs the system as seven containers from two images:
+- **postgres** and **redis**;
+- **migrate**, a one-shot job that applies migrations and seeds demo data;
+- **api** (uvicorn), **worker** (Celery) and **beat** (Celery Beat), all from one backend image;
+- **frontend**: nginx serving the built React app on port 8080 and proxying `/api` and `/ws` to the API, so the browser sees a single origin.
+
+The API, worker and Beat start only after the migration job succeeds. The API container has a health check on `/api/health`, which checks the database, Redis and the event relay.
+
 ---
 
 ## 5. Consistency and concurrency

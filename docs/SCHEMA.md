@@ -53,7 +53,7 @@ erDiagram
     numeric origin_charges
     numeric destination_charges
     numeric total_amount "generated"
-    char currency
+    varchar currency
     int transit_time_days
     date quote_validity_date
     boolean is_latest
@@ -112,7 +112,7 @@ One row per RFQ / auction. This row is also the **lock** that serialises bids an
 | Column | Type | Constraints | Purpose |
 |---|---|---|---|
 | `id` | UUID | PK | |
-| `reference_id` | VARCHAR(30) | NOT NULL, UNIQUE | Human-readable ID, e.g. `RFQ-2026-0001` |
+| `reference_id` | VARCHAR(30) | NOT NULL, UNIQUE | Human-readable ID, e.g. `RFQ-2026-0001`; the number comes from `rfq_reference_seq` |
 | `name` | VARCHAR(120) | NOT NULL | RFQ name |
 | `buyer_id` | UUID | FK → `users.id`, NOT NULL | Creator |
 | `pickup_date` | DATE | NOT NULL | Pickup / service date |
@@ -122,7 +122,7 @@ One row per RFQ / auction. This row is also the **lock** that serialises bids an
 | `current_close_at` | TIMESTAMPTZ | NOT NULL | Live close; moved by extensions |
 | `forced_close_at` | TIMESTAMPTZ | NOT NULL | Hard deadline |
 | `status` | `auction_status` | NOT NULL, default `SCHEDULED` | Stored by the lifecycle tasks; APIs also derive it from the times |
-| `extension_count` | INT | NOT NULL, default 0 | Shown on listing and detail pages |
+| `extension_count` | INT | NOT NULL, default 0, ≥ 0 | Shown on listing and detail pages |
 | `closed_at` | TIMESTAMPTZ | NULL | When bidding ended |
 | `created_at`, `updated_at` | TIMESTAMPTZ | NOT NULL | |
 
@@ -157,7 +157,7 @@ Every quote a supplier submits, including superseded revisions.
 | `origin_charges` | NUMERIC(14,2) | NOT NULL, ≥ 0 | |
 | `destination_charges` | NUMERIC(14,2) | NOT NULL, ≥ 0 | |
 | `total_amount` | NUMERIC(14,2) | **generated**: sum of the three charges | Ranking key; cannot drift from its parts |
-| `currency` | CHAR(3) | NOT NULL, default `INR` | |
+| `currency` | VARCHAR(3) | NOT NULL, default `INR` | |
 | `transit_time_days` | INT | NOT NULL, 1–365 | |
 | `quote_validity_date` | DATE | NOT NULL | Quote valid until |
 | `notes` | VARCHAR(500) | NULL | |
@@ -239,7 +239,7 @@ CREATE TABLE rfqs (
   current_close_at   TIMESTAMPTZ NOT NULL,
   forced_close_at    TIMESTAMPTZ NOT NULL,
   status             auction_status NOT NULL DEFAULT 'SCHEDULED',
-  extension_count    INT NOT NULL DEFAULT 0,
+  extension_count    INT NOT NULL DEFAULT 0 CHECK (extension_count >= 0),
   closed_at          TIMESTAMPTZ,
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -268,8 +268,8 @@ CREATE TABLE bids (
   origin_charges      NUMERIC(14,2) NOT NULL CHECK (origin_charges >= 0),
   destination_charges NUMERIC(14,2) NOT NULL CHECK (destination_charges >= 0),
   total_amount        NUMERIC(14,2) GENERATED ALWAYS AS
-                        (freight_charges + origin_charges + destination_charges) STORED,
-  currency            CHAR(3) NOT NULL DEFAULT 'INR',
+                        (freight_charges + origin_charges + destination_charges) STORED NOT NULL,
+  currency            VARCHAR(3) NOT NULL DEFAULT 'INR',
   transit_time_days   INT NOT NULL CHECK (transit_time_days BETWEEN 1 AND 365),
   quote_validity_date DATE NOT NULL,
   notes               VARCHAR(500),
@@ -307,7 +307,12 @@ CREATE TABLE activity_logs (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_activity_rfq ON activity_logs (rfq_id, id DESC);
+
+-- Numbers the generated reference ids (RFQ-2026-0001, …); safe under concurrent inserts.
+CREATE SEQUENCE rfq_reference_seq START 1 OWNED BY rfqs.reference_id;
 ```
+
+This DDL is checked against the migrated database (columns, constraints, indexes and sequences match). `alembic upgrade head --sql` prints the exact migration SQL.
 
 ## 6. Key queries
 

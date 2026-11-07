@@ -1,0 +1,76 @@
+erDiagram
+  users ||--o{ rfqs : "creates (buyer)"
+  users ||--o{ bids : "submits (supplier)"
+  rfqs ||--|| auction_configs : "configured by"
+  rfqs ||--o{ bids : receives
+  rfqs ||--o{ auction_extensions : "extended by"
+  bids ||--o| auction_extensions : triggers
+  rfqs ||--o{ activity_logs : "logged in"
+  users |o--o{ activity_logs : "acts in"
+
+  users {
+    uuid id PK
+    varchar name
+    varchar email UK
+    varchar company_name
+    user_role role
+    timestamptz created_at
+  }
+  rfqs {
+    uuid id PK
+    varchar reference_id UK
+    varchar name
+    uuid buyer_id FK
+    date pickup_date
+    boolean is_british_auction
+    timestamptz bid_start_at
+    timestamptz bid_close_at "original close"
+    timestamptz current_close_at "moves with extensions"
+    timestamptz forced_close_at
+    auction_status status
+    int extension_count
+    timestamptz closed_at
+  }
+  auction_configs {
+    uuid rfq_id PK, FK
+    int trigger_window_minutes "X"
+    int extension_duration_minutes "Y"
+    trigger_type trigger_type
+  }
+  bids {
+    uuid id PK
+    uuid rfq_id FK
+    uuid supplier_id FK
+    varchar carrier_name
+    numeric freight_charges
+    numeric origin_charges
+    numeric destination_charges
+    numeric total_amount "generated"
+    varchar currency
+    int transit_time_days
+    date quote_validity_date
+    boolean is_latest
+    int rank_at_submission
+    timestamptz submitted_at
+  }
+  auction_extensions {
+    uuid id PK
+    uuid rfq_id FK
+    uuid bid_id FK
+    trigger_type trigger_type
+    timestamptz previous_close_at
+    timestamptz new_close_at
+    boolean capped
+    varchar reason
+  }
+  activity_logs {
+    bigint id PK
+    uuid rfq_id FK
+    activity_type type
+    uuid actor_id FK
+    uuid bid_id FK
+    uuid extension_id FK
+    varchar message
+    jsonb metadata
+    timestamptz created_at
+  }

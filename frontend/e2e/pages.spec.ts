@@ -1,7 +1,7 @@
 /** Page-level checks against the real API: validation, roles, 404s, phone widths. */
 import { expect, test } from '@playwright/test'
 
-import { actingAs, createAuction, expectNoHorizontalScroll, uniqueName, users } from './support'
+import { actingAs, bidViaApi, createAuction, expectNoHorizontalScroll, uniqueName, users } from './support'
 
 test('the create form blocks invalid schedules and maps server errors', async ({ browser }) => {
   const { buyer } = await users()
@@ -71,5 +71,30 @@ test('every page fits a 390 px phone without sideways scrolling', async ({ brows
     await page.getByRole('heading', { level: 1 }).or(page.getByText('This page doesn’t exist')).first().waitFor()
     await expectNoHorizontalScroll(page)
     await context.close()
+  }
+})
+
+test('the ranking fits beside the bid form at laptop and desktop widths', async ({ browser }) => {
+  const { buyer, suppliers } = await users()
+  const rfq = await createAuction(buyer, { name: uniqueName('E2E widths'), closeIn: 600, forcedIn: 900, x: 5, y: 5 })
+  expect((await bidViaApi(rfq.id, suppliers[0], 1_234_567)).status).toBe(201)
+  for (const width of [1024, 1280, 1440, 1920]) {
+    for (const user of [buyer, suppliers[1]]) {
+      const label = `${width}px as ${user.role}`
+      const { context, page } = await actingAs(browser, user, { width, height: 900 })
+      await page.goto(`/rfqs/${rfq.id}`)
+      // A table when the column is wide enough, cards when it isn't; never a clipped table.
+      const table = page.getByRole('table', { name: /Supplier ranking/ })
+      const cards = page.getByRole('list', { name: 'Supplier ranking' })
+      await table.or(cards).waitFor()
+      if (width >= 1440) await expect(table, `${label}: shows the table`).toBeVisible()
+      if (await table.isVisible()) {
+        const hidden = await table.evaluate((el) => el.parentElement!.scrollWidth - el.parentElement!.clientWidth)
+        expect(hidden, `${label}: ranking table is cut off`).toBeLessThanOrEqual(0)
+        await expect(table.getByText('₹12,34,567').first()).toBeInViewport()
+      }
+      await expectNoHorizontalScroll(page)
+      await context.close()
+    }
   }
 })

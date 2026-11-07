@@ -82,9 +82,11 @@ export function RankingTable({ rfqId, ranking, meId, changed }: RankingTableProp
     </span>
   )
 
+    // Table or cards by the space this panel actually gets (it shares the row with the bid form),
+  // not by the window width.
   return (
-    <div className="panel overflow-hidden rounded-2xl">
-      <div className="hidden overflow-x-auto md:block">
+    <div className="@container panel overflow-hidden rounded-2xl">
+      <div className="hidden overflow-x-auto @2xl:block">
         <table className="w-full border-collapse text-[13px] text-ink-2">
           <caption className="sr-only">Supplier ranking, lowest total first</caption>
           <thead>
@@ -92,8 +94,8 @@ export function RankingTable({ rfqId, ranking, meId, changed }: RankingTableProp
               <th scope="col" className="px-3 py-3 font-normal">Rank</th>
               <th scope="col" className="px-3 py-3 font-normal">Supplier</th>
               <th scope="col" className="px-3 py-3 text-right font-normal">Freight</th>
-              <th scope="col" className="px-2.5 py-3 text-right font-normal">Origin</th>
-              <th scope="col" className="px-2.5 py-3 text-right font-normal"><abbr title="Destination" className="no-underline">Dest.</abbr></th>
+              <th scope="col" className="hidden px-2.5 py-3 text-right font-normal @4xl:table-cell">Origin</th>
+              <th scope="col" className="hidden px-2.5 py-3 text-right font-normal @4xl:table-cell"><abbr title="Destination" className="no-underline">Dest.</abbr></th>
               <th scope="col" className="px-3 py-3 text-right font-normal">Total</th>
               <th scope="col" className="px-2.5 py-3 font-normal">Transit</th>
               <th scope="col" className="px-3 py-3 font-normal">Submitted</th>
@@ -104,13 +106,20 @@ export function RankingTable({ rfqId, ranking, meId, changed }: RankingTableProp
               <Fragment key={key(row)}>
                 <tr className={cx('border-t border-[rgb(190_170_255/0.07)]', rowClass(row))}>
                   <td className="px-3 py-3"><RankChip row={row} /></td>
-                  <td className="max-w-52 px-3 py-3">
+                  <td className="max-w-44 px-3 py-3 @4xl:max-w-52">
                     {supplier(row)}
                     <span className="mt-0.5 block truncate text-xs text-ink-3">{row.carrier_name}</span>
                   </td>
-                  <td className="px-3 py-3 text-right"><Money amount={row.freight_charges} currency={row.currency} /></td>
-                  <td className="px-2.5 py-3 text-right"><Money amount={row.origin_charges} currency={row.currency} /></td>
-                  <td className="px-2.5 py-3 text-right"><Money amount={row.destination_charges} currency={row.currency} /></td>
+                  <td className="px-3 py-3 text-right whitespace-nowrap">
+                    <Money amount={row.freight_charges} currency={row.currency} />
+                    {/* Narrow tables (e.g. beside the bid form) fold origin and destination in here. */}
+                    <span className="mt-0.5 block text-[11px] text-ink-3 @4xl:hidden">
+                      + <span className="sr-only">origin </span><Money amount={row.origin_charges} currency={row.currency} />
+                      {' + '}<span className="sr-only">destination </span><Money amount={row.destination_charges} currency={row.currency} />
+                    </span>
+                  </td>
+                  <td className="hidden px-2.5 py-3 text-right @4xl:table-cell"><Money amount={row.origin_charges} currency={row.currency} /></td>
+                  <td className="hidden px-2.5 py-3 text-right @4xl:table-cell"><Money amount={row.destination_charges} currency={row.currency} /></td>
                   <td className="px-3 py-3 text-right">
                     <Money amount={row.total_amount} currency={row.currency} className={cx('text-[14px]', row.rank === 1 ? 'text-mint-2' : 'text-ink')} />
                   </td>
@@ -138,7 +147,7 @@ export function RankingTable({ rfqId, ranking, meId, changed }: RankingTableProp
         </table>
       </div>
 
-      <ul className="divide-y divide-[rgb(190_170_255/0.07)] md:hidden" aria-label="Supplier ranking">
+      <ul className="divide-y divide-[rgb(190_170_255/0.07)] @2xl:hidden" aria-label="Supplier ranking">
         {ranking.map((row) => (
           <li key={key(row)} className={cx('px-4 py-4', rowClass(row))}>
             <div className="flex items-center gap-3">

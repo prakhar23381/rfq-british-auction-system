@@ -1,5 +1,18 @@
 name: british-auction
 
+# `docker compose up --build` runs the whole system at http://localhost:8080.
+# `make up` starts only postgres + redis, for running the app locally.
+
+x-backend: &backend
+  build: ./backend
+  image: british-auction-backend
+  environment:
+    DATABASE_URL: postgresql+psycopg://auction:auction@postgres:5432/british_auction
+    REDIS_URL: redis://redis:6379/0
+    CORS_ORIGINS: '["http://localhost:8080"]'
+    LOG_LEVEL: INFO
+  restart: unless-stopped
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -27,6 +40,45 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  # One-shot: apply migrations, then seed demo data (skipped if auctions already exist).
+  migrate:
+    <<: *backend
+    command: ["sh", "-c", "alembic upgrade head && python -m scripts.seed"]
+    restart: "no"
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  api:
+    <<: *backend
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  worker:
+    <<: *backend
+    command: ["celery", "-A", "app.workers.celery_app", "worker", "-l", "info"]
+    healthcheck:
+      disable: true
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  beat:
+    <<: *backend
+    command: ["celery", "-A", "app.workers.celery_app", "beat", "-l", "info", "-s", "/tmp/celerybeat-schedule"]
+    healthcheck:
+      disable: true
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  frontend:
+    build: ./frontend
+    image: british-auction-frontend
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+    depends_on:
+      api: { condition: service_healthy }
 
 volumes:
   pgdata:

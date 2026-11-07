@@ -1,0 +1,22 @@
+flowchart TB
+  UI["React SPA<br/>Listing · Create RFQ · Details"]
+  subgraph API["FastAPI service"]
+    WS["WebSocket endpoint<br/>+ Redis subscriber"]
+    REST["REST API<br/>routers → services → auction engine"]
+  end
+  PG[("PostgreSQL")]
+  RD[("Redis<br/>Celery broker + pub/sub")]
+  subgraph CEL["Celery"]
+    W["Worker<br/>start / close auction"]
+    B["Beat<br/>sweep every 5s"]
+  end
+
+  UI -- "HTTP JSON" --> REST
+  WS -- "live events" --> UI
+  REST -- "SQL, row locks" --> PG
+  REST -- "tasks + events" --> RD
+  RD -- "events" --> WS
+  RD -- "tasks" --> W
+  B -- "sweep task" --> RD
+  W -- "SQL, row locks" --> PG
+  W -- "events" --> RD

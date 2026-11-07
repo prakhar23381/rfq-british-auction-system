@@ -1,0 +1,7 @@
+stateDiagram-v2
+  [*] --> SCHEDULED: created, start in future
+  [*] --> ACTIVE: created, start already reached
+  SCHEDULED --> ACTIVE: start time reached
+  ACTIVE --> ACTIVE: qualifying bid in window, close extended
+  ACTIVE --> CLOSED: close time reached, before forced close
+  ACTIVE --> FORCE_CLOSED: close time reached, equal to forced close

@@ -1,0 +1,21 @@
+sequenceDiagram
+  participant S as Supplier (browser)
+  participant API as FastAPI
+  participant DB as PostgreSQL
+  participant R as Redis
+  participant W as Celery worker
+
+  S->>API: POST /api/rfqs/{id}/bids
+  API->>DB: BEGIN, lock RFQ row (SELECT ... FOR UPDATE)
+  API->>API: now = server time, check start and close
+  API->>DB: load latest bids, rank before
+  API->>DB: mark previous bid not latest, insert new bid
+  API->>API: rank after, detect trigger, compute extension
+  API->>DB: update close time, insert extension + activity entries
+  API->>DB: COMMIT
+  API->>R: schedule close_auction at the new close time
+  API->>R: publish bid.submitted and auction.extended
+  API-->>S: 201 with rank and extension details
+  R-->>API: pub/sub message
+  API-->>S: WebSocket events to every subscribed browser
+  Note over R,W: The task for the old close time later sees the close has moved and does nothing
