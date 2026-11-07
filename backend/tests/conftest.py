@@ -21,6 +21,8 @@ from alembic import command  # noqa: E402
 from app.core.clock import FrozenClock, get_clock  # noqa: E402
 from app.db import SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
+from app.workers.scheduling import get_scheduler  # noqa: E402
+from tests.fakes import RecordingScheduler  # noqa: E402
 
 TABLES = ["activity_logs", "auction_extensions", "bids", "auction_configs", "rfqs", "users"]
 
@@ -61,6 +63,15 @@ def clock() -> Iterator[FrozenClock]:
     app.dependency_overrides[get_clock] = lambda: frozen
     yield frozen
     app.dependency_overrides.pop(get_clock, None)
+
+
+@pytest.fixture(autouse=True)
+def scheduler() -> Iterator[RecordingScheduler]:
+    """Every test gets a recording scheduler instead of Celery, so no real jobs are queued."""
+    recorder = RecordingScheduler()
+    app.dependency_overrides[get_scheduler] = lambda: recorder
+    yield recorder
+    app.dependency_overrides.pop(get_scheduler, None)
 
 
 @pytest.fixture

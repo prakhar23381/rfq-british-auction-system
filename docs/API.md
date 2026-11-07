@@ -194,14 +194,26 @@ Query parameters: `limit` (default 50, max 200), `before_id` (load older entries
     {
       "id": 42, "type": "AUCTION_EXTENDED", "created_at": "…",
       "actor": null,
-      "message": "Auction extended 12:35 → 12:40. New L1 within last 10 min: Swift Cargo replaced BlueWave Logistics",
-      "metadata": { "previous_close_at": "…", "new_close_at": "…", "capped": false, "trigger_type": "L1_CHANGE" }
+      "message": "Auction extended by 5 min. New L1 within the last 10 min before close: Swift Cargo replaced BlueWave Logistics",
+      "metadata": { "previous_close_at": "…", "new_close_at": "…", "capped": false, "trigger_type": "L1_CHANGE", "extension_minutes": 5 }
     }
   ],
   "next_before_id": 41,
   "server_time": "…"
 }
 ```
+
+Messages carry no clock times (the UI formats `created_at` and the times in `metadata` in the viewer's timezone).
+
+| Type | Example message | Notes |
+|---|---|---|
+| `RFQ_CREATED` | Acme Exports created RFQ RFQ-2026-0001 | |
+| `AUCTION_STARTED` | Bidding opened | Dated at the start time, even if recorded later |
+| `BID_SUBMITTED` | Swift Cargo bid INR 125,000.00: now L1 | `metadata`: `total_amount`, `rank`, `in_trigger_window`, `previous_total` |
+| `AUCTION_EXTENDED` | Auction extended by 5 min. *reason* | Shortened extensions add "(capped at the forced close time)" |
+| `EXTENSION_SKIPPED` | Not extended: the auction is already at its forced close time. Trigger met: *reason* | |
+| `AUCTION_CLOSED` | Auction closed. L1: Swift Cargo at INR 125,000.00 (7 bids from 3 suppliers) | Or "Auction closed with no bids". Dated at the close time; `metadata.l1` holds the supplier, bid and amount |
+| `AUCTION_FORCE_CLOSED` | Auction force closed at its forced close time. L1: … | The close had reached the forced close time |
 
 ## WebSocket — `/ws`
 

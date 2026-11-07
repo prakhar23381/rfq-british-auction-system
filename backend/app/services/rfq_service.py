@@ -13,6 +13,8 @@ from app.models import AuctionConfig, Rfq, User
 from app.models.rfq import RFQ_REFERENCE_SEQ
 from app.schemas.rfq import RfqCreate
 from app.services.activity_service import log_activity
+from app.services.lifecycle_service import STARTED_MESSAGE
+from app.services.scheduling import LifecycleScheduler, schedule_lifecycle
 
 # Allowance for the time between filling in the form and submitting it.
 START_TIME_TOLERANCE = timedelta(minutes=1)
@@ -29,7 +31,14 @@ def next_reference_id(db: Session, now: datetime) -> str:
     raise RuntimeError("Could not generate a free RFQ reference id")  # pragma: no cover
 
 
-def create_rfq(db: Session, data: RfqCreate, buyer: User, now: datetime) -> Rfq:
+def create_rfq(
+    db: Session,
+    data: RfqCreate,
+    buyer: User,
+    now: datetime,
+    *,
+    scheduler: LifecycleScheduler,
+) -> Rfq:
     if data.bid_start_at < now - START_TIME_TOLERANCE:
         raise AppError(
             ErrorCode.VALIDATION_ERROR,
@@ -88,7 +97,8 @@ def create_rfq(db: Session, data: RfqCreate, buyer: User, now: datetime) -> Rfq:
     )
     if status == AuctionStatus.ACTIVE:
         log_activity(
-            db, rfq_id=rfq.id, type=ActivityType.AUCTION_STARTED, message="Bidding opened", at=now
+            db, rfq_id=rfq.id, type=ActivityType.AUCTION_STARTED, message=STARTED_MESSAGE, at=now
         )
     db.commit()
+    schedule_lifecycle(scheduler, rfq)  # after commit, so a job never sees an uncommitted row
     return rfq

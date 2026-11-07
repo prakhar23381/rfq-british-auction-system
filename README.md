@@ -23,14 +23,16 @@ A simplified RFQ (Request for Quotation) platform with **British Auction** biddi
 ```bash
 make setup     # venv, backend + frontend dependencies, backend/.env
 make up        # Postgres + Redis in Docker
+make migrate   # create the tables
+make seed      # demo users and auctions (make seed args=--reset to start over)
 ```
 
 Then, in separate terminals:
 
 ```bash
 make api       # FastAPI on http://localhost:8000  (Swagger UI: /docs)
-make worker    # Celery worker
-make beat      # Celery beat scheduler
+make worker    # Celery worker: opens and closes auctions at their exact times
+make beat      # Celery Beat: runs a sweep every 5 s as a safety net for missed jobs
 make web       # React app on http://localhost:5173
 ```
 

@@ -39,6 +39,7 @@ def make_rfq(
     x: int = 10,
     y: int = 5,
     trigger: TriggerType = TriggerType.L1_CHANGE,
+    status: AuctionStatus = AuctionStatus.SCHEDULED,
 ) -> Rfq:
     rfq = Rfq(
         reference_id=reference_id or f"RFQ-T-{uuid.uuid4().hex[:6].upper()}",
@@ -49,7 +50,7 @@ def make_rfq(
         bid_close_at=close,
         current_close_at=current_close or close,
         forced_close_at=forced,
-        status=AuctionStatus.SCHEDULED,  # stored status; APIs derive it from the times
+        status=status,  # stored status; APIs derive it from the times
         extension_count=extension_count,
         auction_config=AuctionConfig(
             trigger_window_minutes=x, extension_duration_minutes=y, trigger_type=trigger

@@ -179,9 +179,14 @@ sequenceDiagram
 
 1. Lock the RFQ row.
 2. If the auction is no longer active, or its close time differs from `expected_close_at` (it was extended), do nothing — a later task covers the new time.
-3. Otherwise set the status to `CLOSED` or `FORCE_CLOSED`, record the winner in the activity log, and publish `auction.status`.
+3. If the task ran early, it re-queues itself for the close time.
+4. Otherwise set the status to `CLOSED` or `FORCE_CLOSED`, record the L1 supplier and amount in the activity log, and publish `auction.status`.
 
-The Beat sweeper runs the same logic for any auction whose start or close time has passed but whose status was not updated.
+`start_auction` works the same way for the start time. The Beat sweeper runs the same logic for any auction whose start or close time has passed but whose status was not updated. It uses `SKIP LOCKED`, so it never waits behind a bid in progress; the next sweep, 5 s later, picks that auction up.
+
+Start and close entries are dated at the scheduled start or close time, not at the moment the job ran, so the activity log reads correctly even after worker downtime. For the same reason, a bid that arrives before the start job has run opens the auction itself, under the same lock, before it is recorded. A job that is very late applies both transitions in order.
+
+Queuing a job is best effort. If Redis is down when an RFQ is created or extended, the request still succeeds and the sweeper performs the transition.
 
 ---
 

@@ -213,7 +213,7 @@ def get_list_item(db: Session, rfq_id: uuid.UUID, now: datetime) -> RfqListItem:
 # ---------------------------------------------------------------------------
 
 
-def _ranked_latest(db: Session, rfq_id: uuid.UUID) -> list[tuple[RankedBid, Bid, User]]:
+def ranked_latest(db: Session, rfq_id: uuid.UUID) -> list[tuple[RankedBid, Bid, User]]:
     """Latest bid per supplier in rank order, ranked by the auction engine (the same rules
     the bid service applies)."""
     rows = db.execute(
@@ -242,7 +242,7 @@ def ranked_bids(db: Session, rfq_id: uuid.UUID) -> list[RankedBidOut]:
         )
     }
     result = []
-    for entry, bid, user in _ranked_latest(db, rfq_id):
+    for entry, bid, user in ranked_latest(db, rfq_id):
         result.append(
             RankedBidOut(
                 rank=entry.rank,
@@ -333,7 +333,7 @@ def list_bids(db: Session, rfq_id: uuid.UUID, *, history: bool) -> BidListRespon
     get_rfq_or_404(db, rfq_id)
     if not history:
         return BidListResponse(
-            items=[bid_out(bid, user) for _, bid, user in _ranked_latest(db, rfq_id)]
+            items=[bid_out(bid, user) for _, bid, user in ranked_latest(db, rfq_id)]
         )
 
     rows = db.execute(

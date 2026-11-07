@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:5173"]
     currency: str = "INR"
     log_level: str = "INFO"
+    # How often Celery Beat runs the lifecycle sweeper.
+    lifecycle_sweep_seconds: float = 5.0
 
 
 @lru_cache

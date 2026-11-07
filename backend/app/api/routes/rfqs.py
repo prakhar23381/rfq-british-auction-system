@@ -3,7 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, status
 
-from app.api.deps import AppClock, BuyerUser, DbSession, SupplierUser
+from app.api.deps import AppClock, AppScheduler, BuyerUser, DbSession, SupplierUser
 from app.domain.auction_engine import rank_label
 from app.domain.enums import AuctionStatus
 from app.schemas.activity import ActivityListResponse
@@ -35,10 +35,12 @@ ERRORS = {
     status_code=status.HTTP_201_CREATED,
     responses={k: ERRORS[k] for k in (401, 403, 409, 422)},
 )
-def create_rfq(body: RfqCreate, buyer: BuyerUser, db: DbSession, clock: AppClock) -> RfqDetail:
+def create_rfq(
+    body: RfqCreate, buyer: BuyerUser, db: DbSession, clock: AppClock, scheduler: AppScheduler
+) -> RfqDetail:
     """Create an RFQ run as a British auction (buyers only)."""
     now = clock.now()
-    rfq = rfq_service.create_rfq(db, body, buyer, now)
+    rfq = rfq_service.create_rfq(db, body, buyer, now, scheduler=scheduler)
     return query_service.get_rfq_detail(db, rfq.id, now)
 
 
@@ -87,11 +89,16 @@ def list_activity(
     responses={k: ERRORS[k] for k in (401, 403, 404, 409, 422)},
 )
 def submit_bid(
-    rfq_id: uuid.UUID, body: BidCreate, supplier: SupplierUser, db: DbSession, clock: AppClock
+    rfq_id: uuid.UUID,
+    body: BidCreate,
+    supplier: SupplierUser,
+    db: DbSession,
+    clock: AppClock,
+    scheduler: AppScheduler,
 ) -> BidSubmitResponse:
     """Submit a quote (suppliers only). Each new bid must be lower than your previous one.
     A qualifying bid inside the trigger window extends the auction, never past forced close."""
-    outcome = bid_service.submit_bid(db, rfq_id, supplier, body, clock)
+    outcome = bid_service.submit_bid(db, rfq_id, supplier, body, clock, scheduler=scheduler)
     extension = outcome.decision.extension
     rfq = outcome.rfq
     return BidSubmitResponse(

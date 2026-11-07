@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -34,3 +35,8 @@ def log_activity(
     )
     db.add(entry)
     return entry
+
+
+def money(amount: Decimal, currency: str) -> str:
+    """Money as shown in activity messages, e.g. "INR 125,000.00"."""
+    return f"{currency} {amount:,.2f}"

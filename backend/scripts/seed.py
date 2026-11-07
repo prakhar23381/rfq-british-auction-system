@@ -7,7 +7,9 @@ User ids are derived from their emails, so they stay the same across re-seeds an
 frontend's remembered "acting as" user keeps working.
 
 Auctions and bids are created through the real services on a simulated clock, so every
-ranking, extension and activity entry is produced by the actual auction rules:
+ranking, extension and activity entry is produced by the actual auction rules. A lifecycle
+sweep then closes the auctions whose time is up, and the open ones get their start/close jobs
+queued (when Redis is reachable; otherwise the Beat sweeper handles them):
 
 - RFQ-2026-0001  open, closes ~10 min after seeding, small X/Y: good for trying extensions
 - RFQ-2026-0002  open for ~2 hours, "any rank change" trigger
@@ -31,7 +33,8 @@ from app.domain.enums import TriggerType, UserRole
 from app.models import Rfq, User
 from app.schemas.bid import BidCreate
 from app.schemas.rfq import AuctionConfigIn, RfqCreate
-from app.services import bid_service, rfq_service
+from app.services import bid_service, lifecycle_service, rfq_service
+from app.services.scheduling import LifecycleScheduler, NullScheduler, schedule_lifecycle
 
 SEED_NAMESPACE = uuid.UUID("6b1f2c1e-7a8d-4c55-9a43-2f0d6c1b9e10")
 
@@ -123,6 +126,7 @@ class Scenario:
             ),
             session.get_one(User, buyer.id),
             self.clock.now(),
+            scheduler=NullScheduler(),  # jobs are queued once, after the replay (see run)
         )
 
     def bid(self, supplier: SeedUser, total: int, when: datetime, transit_days: int = 24) -> None:
@@ -136,7 +140,9 @@ class Scenario:
             quote_validity_date=self.pickup + timedelta(days=30),
         )
         supplier_user = self.session.get_one(User, supplier.id)
-        bid_service.submit_bid(self.session, self.rfq.id, supplier_user, body, self.clock)
+        bid_service.submit_bid(
+            self.session, self.rfq.id, supplier_user, body, self.clock, scheduler=NullScheduler()
+        )
 
 
 def seed_rfqs(session: Session, now: datetime) -> int:
@@ -191,11 +197,21 @@ def seed_rfqs(session: Session, now: datetime) -> int:
     return 5
 
 
-def run(session: Session, *, wipe: bool, now: datetime) -> tuple[int, int]:
+def run(
+    session: Session,
+    *,
+    wipe: bool,
+    now: datetime,
+    scheduler: LifecycleScheduler | None = None,
+) -> tuple[int, int]:
     if wipe:
         reset(session)
     users = seed_users(session)
     rfqs = seed_rfqs(session, now)
+    # Close the auctions whose time is up, then queue jobs for the rest.
+    lifecycle_service.sweep(session, FrozenClock(now))
+    for rfq in session.scalars(select(Rfq)):
+        schedule_lifecycle(scheduler or NullScheduler(), rfq)
     return users, rfqs
 
 
@@ -204,8 +220,10 @@ def main() -> None:
     parser.add_argument("--reset", action="store_true", help="delete all data before seeding")
     args = parser.parse_args()
 
+    from app.workers.scheduling import CeleryScheduler  # only the CLI needs Celery
+
     with SessionLocal() as session:
-        users, rfqs = run(session, wipe=args.reset, now=utc_now())
+        users, rfqs = run(session, wipe=args.reset, now=utc_now(), scheduler=CeleryScheduler())
     print(f"Seeded {users} user(s) and {rfqs} RFQ(s).")
     for u in USERS:
         print(f"  {u.role.value:<8} {u.company_name:<20} X-User-Id: {u.id}")

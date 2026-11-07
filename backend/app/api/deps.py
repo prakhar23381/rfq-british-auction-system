@@ -14,10 +14,13 @@ from app.core.redis_client import get_redis
 from app.db import get_db
 from app.domain.enums import UserRole
 from app.models import User
+from app.services.scheduling import LifecycleScheduler
+from app.workers.scheduling import get_scheduler
 
 DbSession = Annotated[Session, Depends(get_db)]
 RedisClient = Annotated[Redis, Depends(get_redis)]
 AppClock = Annotated[Clock, Depends(get_clock)]
+AppScheduler = Annotated[LifecycleScheduler, Depends(get_scheduler)]
 
 
 def get_current_user(

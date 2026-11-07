@@ -17,11 +17,14 @@ from sqlalchemy.orm import Session
 from app.core.clock import FrozenClock, SystemClock
 from app.core.errors import AppError, ErrorCode
 from app.db import SessionLocal
-from app.domain.enums import ActivityType, TriggerType, UserRole
+from app.domain.enums import ActivityType, AuctionStatus, TriggerType, UserRole
 from app.models import ActivityLog, AuctionExtension, Bid, Rfq, User
 from app.schemas.bid import BidCreate
-from app.services import bid_service
+from app.services import bid_service, lifecycle_service
+from app.services.lifecycle_service import Outcome
+from app.services.scheduling import NullScheduler
 from tests.factories import make_rfq, make_user
+from tests.fakes import RecordingScheduler
 
 
 def at(hour: int, minute: int, second: int = 0) -> datetime:
@@ -277,7 +280,11 @@ def test_a14_trigger_types(
 
 
 def test_a15_worked_example_until_force_close(
-    client: TestClient, clock: FrozenClock, db: Session, people: Suppliers
+    client: TestClient,
+    clock: FrozenClock,
+    db: Session,
+    people: Suppliers,
+    scheduler: RecordingScheduler,
 ) -> None:
     rfq = auction(db, people["buyer"], TriggerType.L1_CHANGE)
     a, b, c = people["A"], people["B"], people["C"]
@@ -304,6 +311,7 @@ def test_a15_worked_example_until_force_close(
     assert late.status_code == 409
 
     assert activity_types(client, rfq) == [
+        "AUCTION_STARTED",  # no start job ran: the first bid opened the auction
         "BID_SUBMITTED",
         "BID_SUBMITTED", "AUCTION_EXTENDED",
         "BID_SUBMITTED",
@@ -343,6 +351,21 @@ def test_a15_worked_example_until_force_close(
         "Swift Cargo replaced BlueWave"
     )
     assert reasons[-1]["metadata"]["previous_close_at"] == "2026-11-10T18:00:00+00:00"
+
+    # A close job was queued for every new close time; only the last one closes the auction.
+    assert scheduler.closes == [(rfq.id, at(18, m)) for m in (5, 10, 15, 20)]
+    for _, close_at in scheduler.closes[:-1]:
+        stale = lifecycle_service.close_auction(db, rfq.id, clock, expected_close_at=close_at)
+        assert stale.outcome == Outcome.STALE
+    done = lifecycle_service.close_auction(db, rfq.id, clock, expected_close_at=at(18, 20))
+    assert done.outcome == Outcome.UPDATED
+    assert done.status == AuctionStatus.FORCE_CLOSED
+    final = client.get(f"/api/rfqs/{rfq.id}/activity").json()["items"][0]
+    assert final["type"] == "AUCTION_FORCE_CLOSED"
+    assert final["message"] == (
+        "Auction force closed at its forced close time. L1: Swift Cargo at INR 70.00 "
+        "(7 bids from 2 suppliers)"
+    )
 
 
 def test_capped_extension_is_reported(
@@ -396,7 +419,9 @@ def test_a20_concurrent_bids_keep_every_invariant(db: Session) -> None:
                 transit_time_days=10,
                 quote_validity_date=date(2027, 1, 1),
             )
-            bid_service.submit_bid(session, rfq_id, supplier, body, SystemClock())
+            bid_service.submit_bid(
+                session, rfq_id, supplier, body, SystemClock(), scheduler=NullScheduler()
+            )
             return True
         except AppError as exc:
             # Same supplier racing itself: whichever lower bid lands first wins.

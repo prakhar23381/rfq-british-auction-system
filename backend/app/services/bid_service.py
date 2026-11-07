@@ -8,7 +8,6 @@ extend from the same close time, and no bid can slip in after the close.
 
 import uuid
 from dataclasses import dataclass
-from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import select
@@ -31,7 +30,9 @@ from app.domain.auction_engine import (
 from app.domain.enums import ActivityType, TriggerType
 from app.models import AuctionConfig, AuctionExtension, Bid, Rfq, User
 from app.schemas.bid import BidCreate
-from app.services.activity_service import log_activity
+from app.services.activity_service import log_activity, money
+from app.services.lifecycle_service import mark_started
+from app.services.scheduling import LifecycleScheduler
 
 
 @dataclass(frozen=True)
@@ -43,10 +44,6 @@ class BidOutcome:
     rank: int
     decision: ExtensionDecision
     reason: str | None  # why the auction was (or would have been) extended
-
-
-def money(amount: Decimal, currency: str) -> str:
-    return f"{currency} {amount:,.2f}"
 
 
 def _lock_rfq(db: Session, rfq_id: uuid.UUID) -> Rfq:
@@ -77,7 +74,13 @@ def _extension_reason(
 
 
 def submit_bid(
-    db: Session, rfq_id: uuid.UUID, supplier: User, data: BidCreate, clock: Clock
+    db: Session,
+    rfq_id: uuid.UUID,
+    supplier: User,
+    data: BidCreate,
+    clock: Clock,
+    *,
+    scheduler: LifecycleScheduler,
 ) -> BidOutcome:
     rfq = _lock_rfq(db, rfq_id)
     now = clock.now()  # read after the lock, so it reflects when the bid is processed
@@ -88,6 +91,8 @@ def submit_bid(
         bid_start_at=rfq.bid_start_at, current_close_at=rfq.current_close_at, at=now
     ):
         raise AppError(ErrorCode.AUCTION_CLOSED, "Bidding for this auction has closed")
+    # The start job may not have run yet; open the auction first so the log reads in order.
+    mark_started(db, rfq)
     if data.quote_validity_date < rfq.pickup_date:
         message = "Quote must be valid until at least the pickup / service date"
         raise AppError(
@@ -243,4 +248,7 @@ def submit_bid(
             )
 
     db.commit()
+    if decision.extended:
+        # The job queued for the old close time will find the close moved and do nothing.
+        scheduler.schedule_close(rfq.id, rfq.current_close_at)
     return BidOutcome(rfq=rfq, bid=bid, rank=rank, decision=decision, reason=reason)

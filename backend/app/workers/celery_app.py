@@ -23,4 +23,13 @@ celery_app.conf.update(
     # ETA tasks (auction close) can sit in Redis for hours; avoid premature redelivery.
     broker_transport_options={"visibility_timeout": 43200},
     broker_connection_retry_on_startup=True,
+    # Safety net for lost/late ETA jobs and worker downtime (see lifecycle_service).
+    beat_schedule={
+        "sweep-auctions": {
+            "task": "auction.sweep",
+            "schedule": settings.lifecycle_sweep_seconds,
+            # Don't let sweeps pile up while no worker is running.
+            "options": {"expires": settings.lifecycle_sweep_seconds},
+        }
+    },
 )
