@@ -359,6 +359,7 @@ def test_a18_detail_ranking_breakdown_and_stats(client: TestClient, ranked_aucti
         "supplier_count": 3,
         "extension_count": 3,
         "total_extended_minutes": 15,
+        "total_extended_seconds": 900,
         "first_l1_amount": "1300.00",
         "current_l1_amount": "1150.00",
         "savings_pct": str((Decimal(150) / Decimal(1300) * 100).quantize(Decimal("0.01"))),

@@ -40,6 +40,7 @@ function created(body: RfqCreate) {
       supplier_count: 0,
       extension_count: 0,
       total_extended_minutes: 0,
+      total_extended_seconds: 0,
       first_l1_amount: null,
       current_l1_amount: null,
       savings_pct: null,

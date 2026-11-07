@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import type { AuctionConfig, RfqStats } from '../../api/types'
 import { Card } from '../../components/ui/Card'
 import { Money } from '../../components/ui/values'
-import { formatMinutes } from '../../lib/auctionPreview'
+import { formatDuration } from '../../lib/auctionPreview'
 import { TRIGGER_LABELS } from '../../lib/format'
 
 function Tile({ label, value, note }: { label: string; value: ReactNode; note?: ReactNode }) {
@@ -26,7 +26,7 @@ export function StatsStrip({ stats }: { stats: RfqStats }) {
       <Tile
         label="Extensions"
         value={<span className={stats.extension_count > 0 ? 'text-amber' : undefined}>{stats.extension_count}</span>}
-        note={stats.extension_count > 0 ? `+${formatMinutes(stats.total_extended_minutes)} in total` : undefined}
+        note={stats.extension_count > 0 ? `+${formatDuration(stats.total_extended_seconds)} in total` : undefined}
       />
       <Tile
         label="Savings vs first L1"

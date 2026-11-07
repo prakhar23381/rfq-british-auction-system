@@ -14,7 +14,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationInfo
 from pydantic_core import PydanticCustomError
 
 from app.domain.enums import AuctionStatus, TriggerType
-from app.schemas.common import ApiModel, ServerTimed
+from app.schemas.common import ApiModel, ServerTimed, Text
 from app.schemas.party import PartyOut
 
 REFERENCE_ID_PATTERN = r"^[A-Z0-9-]{3,30}$"
@@ -33,7 +33,7 @@ class AuctionConfigIn(BaseModel):
 class RfqCreate(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    name: str = Field(min_length=3, max_length=120)
+    name: Text = Field(min_length=3, max_length=120)
     reference_id: str | None = Field(
         default=None,
         description="Optional; generated (RFQ-YYYY-NNNN) when omitted",
@@ -142,7 +142,8 @@ class RfqStats(ApiModel):
     bid_count: int
     supplier_count: int
     extension_count: int
-    total_extended_minutes: int
+    total_extended_minutes: int = Field(description="Whole minutes added by extensions")
+    total_extended_seconds: int = Field(description="Exact time added by extensions")
     first_l1_amount: Decimal | None = Field(description="Total of the first bid placed")
     current_l1_amount: Decimal | None
     savings_pct: Decimal | None = Field(description="Drop from first to current L1, in %")

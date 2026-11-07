@@ -43,6 +43,8 @@ export function totalCents(values: BidFormValues): number | null {
 }
 
 const AMOUNT_MESSAGE = 'Enter an amount like 12500 or 12500.50.'
+/** The server stores totals as NUMERIC(14, 2). */
+export const MAX_TOTAL_CENTS = 99_999_999_999_999
 
 export function validateBid(values: BidFormValues, opts: { pickupDate: string; previousTotal: string | null }): BidErrors {
   const errors: BidErrors = {}
@@ -56,6 +58,7 @@ export function validateBid(values: BidFormValues, opts: { pickupDate: string; p
   const total = totalCents(values)
   if (total !== null) {
     if (total <= 0) errors.total = 'The total must be more than zero.'
+    else if (total > MAX_TOTAL_CENTS) errors.total = 'The total must be at most ₹9,99,99,99,99,999.99.'
     else if (opts.previousTotal !== null) {
       const previous = toCents(opts.previousTotal)
       if (previous !== null && total >= previous) errors.total = 'Your new total must be lower than your current bid.'

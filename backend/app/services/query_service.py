@@ -324,6 +324,7 @@ def _stats(db: Session, rfq: Rfq, ranking: list[RankedBidOut]) -> RfqStats:
         supplier_count=supplier_count,
         extension_count=rfq.extension_count,
         total_extended_minutes=int(extended.total_seconds() // 60),
+        total_extended_seconds=round(extended.total_seconds()),
         first_l1_amount=first_l1,
         current_l1_amount=current_l1,
         savings_pct=savings,

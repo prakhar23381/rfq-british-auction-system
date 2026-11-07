@@ -44,6 +44,8 @@ Run `make help` to list all commands.
 make check     # ruff + oxlint, mypy + tsc, pytest, Vitest, frontend build
 make test-web  # frontend tests only
 make api-types # regenerate frontend/src/api/schema.d.ts after changing API schemas
+make e2e       # Playwright browser tests (needs api, worker, beat running and a seeded DB)
+make simulate  # demo: bot suppliers fight over a short auction until it force-closes
 ```
 
 ## Repository layout
@@ -51,6 +53,6 @@ make api-types # regenerate frontend/src/api/schema.d.ts after changing API sche
 ```
 backend/    FastAPI app, SQLAlchemy models, Alembic migrations, Celery tasks, tests
 frontend/   React + TypeScript SPA (Vite, Tailwind, TanStack Query, React Router)
-docs/       HLD, schema design, API reference
+docs/       HLD, schema design, API reference, testing (TESTING.md)
 infra/      Docker init scripts
 ```

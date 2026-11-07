@@ -10,23 +10,25 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_core import PydanticCustomError
 
 from app.domain.enums import AuctionStatus
-from app.schemas.common import ApiModel, ServerTimed
+from app.schemas.common import ApiModel, ServerTimed, Text
 from app.schemas.party import PartyOut
 
 CENTS = Decimal("0.01")
 Money = Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=2)]
+# The total is stored in the same NUMERIC(14, 2) as each charge.
+MAX_TOTAL = Decimal("999999999999.99")
 
 
 class BidCreate(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    carrier_name: str = Field(min_length=2, max_length=100)
+    carrier_name: Text = Field(min_length=2, max_length=100)
     freight_charges: Money
     origin_charges: Money
     destination_charges: Money
     transit_time_days: int = Field(ge=1, le=365, description="Transit time in days")
     quote_validity_date: date = Field(description="Quote is valid until this date")
-    notes: str | None = Field(default=None, max_length=500)
+    notes: Text | None = Field(default=None, max_length=500)
 
     @property
     def total_amount(self) -> Decimal:
@@ -37,6 +39,10 @@ class BidCreate(BaseModel):
     def total_must_be_positive(self) -> "BidCreate":
         if self.total_amount <= 0:
             raise PydanticCustomError("zero_total", "Total charges must be greater than zero")
+        if self.total_amount > MAX_TOTAL:
+            raise PydanticCustomError(
+                "total_too_large", "Total charges must be at most 999,999,999,999.99"
+            )
         return self
 
 

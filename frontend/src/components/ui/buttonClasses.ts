@@ -5,7 +5,7 @@ export type ButtonSize = 'sm' | 'md'
 
 const VARIANTS: Record<ButtonVariant, string> = {
   primary:
-    'bg-peri text-white shadow-[0_8px_26px_rgb(90_96_255/0.35)] hover:bg-peri-2 hover:shadow-[0_10px_34px_rgb(110_116_255/0.5)]',
+    'bg-action text-white shadow-[0_8px_26px_rgb(90_96_255/0.35)] hover:bg-action-hover hover:shadow-[0_10px_34px_rgb(110_116_255/0.5)]',
   ghost: 'border border-[rgb(230_226_255/0.42)] bg-white/[0.03] text-ink hover:bg-white/10',
   subtle: 'border border-line bg-violet/10 text-ink-2 hover:bg-violet/20 hover:text-ink',
   danger: 'border border-danger/40 bg-danger/10 text-danger hover:bg-danger/20',

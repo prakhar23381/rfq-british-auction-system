@@ -63,6 +63,7 @@ function detail(overrides: { closeIn?: number; version?: number; ranking?: Ranke
       supplier_count: 2,
       extension_count: 1,
       total_extended_minutes: 5,
+      total_extended_seconds: 300,
       first_l1_amount: '130000.00',
       current_l1_amount: '118000.00',
       savings_pct: '9.23',
@@ -323,5 +324,124 @@ describe('Auction details', () => {
       serverSends({ type: 'resync', channel: null, data: {} })
       await waitFor(() => expect(callsTo(fetchMock, '/api/rfqs/rfq-1').length).toBe(before + 1))
     })
+  })
+})
+
+describe('Auction details: more cases', () => {
+  it('expands a supplier’s bid history', async () => {
+    mockApi({
+      '/api/rfqs/rfq-1': () => respond(detail()),
+      '/api/rfqs/rfq-1/activity': () => respond({ items: ACTIVITY, next_before_id: null }),
+      '/api/rfqs/rfq-1/bids': () =>
+        respond({
+          items: [
+            { ...ranked(1, SWIFT, 110000), id: 'b2', is_latest: true, rank_at_submission: 1 },
+            { ...ranked(1, SWIFT, 125000), id: 'b1', is_latest: false, rank_at_submission: 2 },
+            { ...ranked(2, BLUEWAVE, 113500), id: 'b0', is_latest: true, rank_at_submission: 1 },
+          ],
+        }),
+    })
+    await openAuction()
+    const toggle = within(rows()[0]).getByRole('button', { name: /2 bids/ })
+    await userEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    const history = await within(rankingTable()).findByRole('list', { name: 'Bid history' })
+    expect(within(history).getAllByRole('listitem')).toHaveLength(2) // only Swift's bids
+    expect(history).toHaveTextContent('was L2 when placed')
+    expect(within(history).getByText('₹1,33,000')).toHaveClass('line-through') // superseded
+    await userEvent.click(toggle)
+    expect(within(rankingTable()).queryByRole('list', { name: 'Bid history' })).not.toBeInTheDocument()
+  })
+
+  it('loads older activity on request', async () => {
+    mockApi({
+      '/api/rfqs/rfq-1': () => respond(detail()),
+      '/api/rfqs/rfq-1/activity': (url) =>
+        url.searchParams.get('before_id')
+          ? respond({ items: [entry(1, 'RFQ_CREATED', 'Acme Exports created RFQ RFQ-2026-0001')], next_before_id: null })
+          : respond({ items: ACTIVITY, next_before_id: 2 }),
+    })
+    await openAuction()
+    await userEvent.click(await screen.findByRole('button', { name: 'Load older activity' }))
+    expect(await screen.findByText('Acme Exports created RFQ RFQ-2026-0001')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Load older activity' })).not.toBeInTheDocument()
+  })
+
+  it('tells suppliers when an upcoming auction opens', async () => {
+    actAs('s1')
+    const upcoming = detail()
+    upcoming.rfq = { ...upcoming.rfq, status: 'SCHEDULED', bid_start_at: inMinutes(30) }
+    mockAuction({ detail: () => upcoming })
+    await openAuction()
+    expect(screen.getByText(/^Bidding opens at/)).toBeInTheDocument()
+    expect(screen.getByText('Opens in')).toBeInTheDocument()
+    expect(screen.queryByRole('form', { name: 'Place a bid' })).not.toBeInTheDocument()
+  })
+
+  it('puts server field errors on the field and reports network failures', async () => {
+    actAs('s1')
+    let answer: () => Response | Promise<Response> = () =>
+      respond(
+        {
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Quote must be valid until at least the pickup / service date',
+            details: [{ field: 'quote_validity_date', message: 'Quote must be valid until at least the pickup / service date' }],
+          },
+        },
+        422,
+      )
+    mockAuction({ submit: () => answer() as Response })
+    await openAuction()
+    const form = screen.getByRole('form', { name: 'Place a bid' })
+    fireEvent.change(within(form).getByLabelText('Freight'), { target: { value: '90000' } })
+    await userEvent.click(within(form).getByRole('button', { name: 'Place a lower bid' }))
+    const validity = within(form).getByLabelText('Quote valid until')
+    await waitFor(() => expect(validity).toHaveAccessibleDescription('Quote must be valid until at least the pickup / service date'))
+    expect(validity).toHaveFocus()
+
+    fireEvent.change(validity, { target: { value: '2027-01-15' } })
+    expect(validity).not.toHaveAttribute('aria-invalid')
+    answer = () => Promise.reject(new TypeError('Failed to fetch'))
+    await userEvent.click(within(form).getByRole('button', { name: 'Place a lower bid' }))
+    expect(await within(form).findByRole('alert')).toHaveTextContent('Can’t reach the server')
+  })
+
+  it('explains when the trigger fired but the close is already at the forced close', async () => {
+    actAs('s1')
+    mockAuction({
+      submit: () =>
+        respond(
+          {
+            bid: {},
+            rank: 1,
+            rank_label: 'L1',
+            extension: { applied: false, previous_close_at: inMinutes(20), new_close_at: inMinutes(20), capped: true, reason: 'New L1' },
+            rfq: { status: 'ACTIVE', current_close_at: inMinutes(20), extension_count: 4 },
+          },
+          201,
+        ),
+    })
+    await openAuction()
+    const form = screen.getByRole('form', { name: 'Place a bid' })
+    fireEvent.change(within(form).getByLabelText('Carrier'), { target: { value: 'New Carrier' } })
+    fireEvent.change(within(form).getByLabelText('Freight'), { target: { value: '90000' } })
+    fireEvent.change(within(form).getByLabelText('Transit time'), { target: { value: '18' } })
+    fireEvent.change(within(form).getByLabelText(/Notes/), { target: { value: 'Includes BAF' } })
+    await userEvent.click(within(form).getByRole('button', { name: 'Place a lower bid' }))
+    expect(await screen.findByText('The close is already at the forced close, so no extension.')).toBeInTheDocument()
+  })
+
+  it('shows a retryable error when the server fails', async () => {
+    let fail = true
+    mockApi({
+      '/api/rfqs/rfq-1': () => (fail ? respond({ error: { code: 'INTERNAL_ERROR', message: 'x' } }, 500) : respond(detail())),
+      '/api/rfqs/rfq-1/activity': () => respond({ items: ACTIVITY, next_before_id: null }),
+    })
+    renderApp('/rfqs/rfq-1')
+    expect(await screen.findByText('Couldn’t load this auction', {}, { timeout: 4000 })).toBeInTheDocument()
+    fail = false
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(await screen.findByRole('heading', { level: 1, name: 'Mumbai to Rotterdam' })).toBeInTheDocument()
   })
 })

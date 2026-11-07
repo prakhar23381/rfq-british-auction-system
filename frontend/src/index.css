@@ -19,6 +19,9 @@
 
   --color-peri: #6f78ff;
   --color-peri-2: #8d94ff;
+  /* Button fill: deep enough for white text at WCAG AA (4.9:1); darker on hover. */
+  --color-action: #5560f0;
+  --color-action-hover: #4a54e6;
   --color-violet: #9b8cff;
   --color-violet-deep: #7a5cff;
   --color-amber: #ffb86b;

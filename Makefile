@@ -8,7 +8,7 @@ PY       := $(VENV)/bin/python
 CELERY   := cd $(BACKEND) && .venv/bin/celery -A app.workers.celery_app
 
 .PHONY: help up down logs setup venv install env api worker beat web migrate migration \
-        seed test test-web test-db lint fmt typecheck check api-types
+        seed simulate test test-web e2e test-db lint fmt typecheck check api-types
 
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -60,12 +60,18 @@ migration: ## Autogenerate a migration: make migration m="message"
 seed: ## Seed demo data (make seed args=--reset to wipe first)
 	cd $(BACKEND) && .venv/bin/python -m scripts.seed $(args)
 
+simulate: ## Demo: bot suppliers fight over a short auction (needs api, worker, beat; args="--close-in 120")
+	cd $(BACKEND) && .venv/bin/python -m scripts.simulate_bidding $(args)
+
 # ---- Quality ----------------------------------------------------------------
 test: ## Run backend tests
 	cd $(BACKEND) && .venv/bin/pytest
 
 test-web: ## Run frontend tests (Vitest)
 	cd $(FRONTEND) && npm test
+
+e2e: ## Browser end-to-end tests (needs api, worker, beat running and a seeded DB)
+	cd $(FRONTEND) && npm run e2e
 
 lint: ## Lint backend (ruff) and frontend (oxlint)
 	cd $(BACKEND) && .venv/bin/ruff check . && .venv/bin/ruff format --check .

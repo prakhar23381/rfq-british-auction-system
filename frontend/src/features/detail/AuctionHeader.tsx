@@ -5,7 +5,7 @@ import { cx } from '../../components/ui/cx'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import { Countdown, DateTime } from '../../components/ui/values'
 import { useServerNow } from '../../hooks/useServerNow'
-import { formatMinutes } from '../../lib/auctionPreview'
+import { formatDuration } from '../../lib/auctionPreview'
 import { formatTime } from '../../lib/format'
 import { parseInstant } from '../../lib/time'
 
@@ -86,7 +86,7 @@ export function AuctionHeader({ detail, extensionPulse, onDue }: AuctionHeaderPr
         <span aria-hidden className="text-ink-3">·</span>
         {rfq.extension_count > 0 ? (
           <span className="text-amber">
-            Extended +{formatMinutes(stats.total_extended_minutes)} ({rfq.extension_count}×) to{' '}
+            Extended +{formatDuration(stats.total_extended_seconds)} ({rfq.extension_count}×) to{' '}
             <span className="font-mono">{formatTime(rfq.current_close_at)}</span>
           </span>
         ) : (

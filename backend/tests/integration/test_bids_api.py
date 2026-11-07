@@ -470,3 +470,21 @@ def test_a20_concurrent_bids_keep_every_invariant(db: Session) -> None:
     ).all()
     for earlier, later in itertools.pairwise(chain):
         assert later.previous_close_at == earlier.new_close_at
+
+
+def test_a_capped_extension_shorter_than_a_minute_is_reported_exactly(
+    client: TestClient, clock: FrozenClock, db: Session, people: Suppliers
+) -> None:
+    """Times can have seconds (the API accepts them): a 40 s extension must not read "0 min"."""
+    from datetime import timedelta
+
+    forced = at(18, 0) + timedelta(seconds=40)
+    rfq = make_rfq(db, people["buyer"], start=at(17, 0), close=at(18, 0), forced=forced,
+                   trigger=TriggerType.BID_RECEIVED)  # fmt: skip
+    db.commit()
+    place(client, clock, rfq, people["A"], 100, at(17, 59))
+    log = client.get(f"/api/rfqs/{rfq.id}/activity").json()["items"][0]
+    assert log["message"].startswith("Auction extended by 40 s (capped at the forced close time)")
+    assert log["metadata"]["extension_seconds"] == 40
+    stats = client.get(f"/api/rfqs/{rfq.id}").json()["stats"]
+    assert (stats["total_extended_seconds"], stats["total_extended_minutes"]) == (40, 0)

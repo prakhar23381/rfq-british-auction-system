@@ -115,3 +115,36 @@ describe('App shell', () => {
     await waitFor(() => expect(screen.getByText('Degraded: redis, realtime')).toBeInTheDocument())
   })
 })
+
+describe('User menu details', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('closes on an outside click, Tab, and does nothing when re-choosing the same user', async () => {
+    mockApi()
+    const user = userEvent.setup()
+    renderApp()
+    const button = await actingAsButton()
+    await user.click(button)
+    await user.click(document.body)
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+
+    await user.click(button)
+    await user.keyboard('{ArrowUp}') // wraps to the last user
+    expect(within(screen.getByRole('menu')).getByRole('menuitemradio', { name: /Swift Cargo/ })).toHaveFocus()
+    await user.keyboard('{Home}')
+    expect(within(screen.getByRole('menu')).getByRole('menuitemradio', { name: /Acme Exports/ })).toHaveFocus()
+    await user.keyboard('{Tab}')
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+
+    await user.click(button)
+    await user.click(within(screen.getByRole('menu')).getByRole('menuitemradio', { name: /Acme Exports/ }))
+    expect(screen.queryByText('Acting as Acme Exports')).not.toBeInTheDocument() // no toast
+    expect(button).toHaveFocus()
+  })
+
+  it('tells you to seed when there are no users', async () => {
+    mockApi({ '/api/users': () => respond({ items: [] }) })
+    renderApp()
+    expect(await screen.findByText('No users · run make seed')).toBeInTheDocument()
+  })
+})

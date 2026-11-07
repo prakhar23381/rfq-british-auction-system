@@ -670,8 +670,16 @@ export interface components {
             supplier_count: number;
             /** Extension Count */
             extension_count: number;
-            /** Total Extended Minutes */
+            /**
+             * Total Extended Minutes
+             * @description Whole minutes added by extensions
+             */
             total_extended_minutes: number;
+            /**
+             * Total Extended Seconds
+             * @description Exact time added by extensions
+             */
+            total_extended_seconds: number;
             /**
              * First L1 Amount
              * @description Total of the first bid placed

@@ -49,3 +49,12 @@ export function formatMinutes(minutes: number): string {
   if (h === 0) return `${m} min`
   return m === 0 ? `${h} h` : `${h} h ${m} min`
 }
+
+/** A duration in seconds: "40 s", "5 min", "2 min 30 s", "1 h 5 min". */
+export function formatDuration(totalSeconds: number): string {
+  const seconds = Math.round(totalSeconds)
+  if (seconds < 60) return `${seconds} s`
+  const rest = seconds % 60
+  const minutes = formatMinutes(Math.floor(seconds / 60))
+  return rest && seconds < 3600 ? `${minutes} ${rest} s` : minutes
+}

@@ -51,6 +51,7 @@ describe('validateBid', () => {
     ['three decimals', { origin: '1.234' }, 'origin', 'Enter an amount like 12500 or 12500.50.'],
     ['negative', { destination: '-5' }, 'destination', 'Enter an amount like 12500 or 12500.50.'],
     ['zero total', { freight: '0', origin: '0', destination: '0.00' }, 'total', 'The total must be more than zero.'],
+    ['total too large', { freight: '999999999999.99', origin: '1' }, 'total', 'The total must be at most ₹9,99,99,99,99,999.99.'],
     ['zero transit', { transitDays: '0' }, 'transitDays', 'Enter whole days from 1 to 365.'],
     ['long transit', { transitDays: '366' }, 'transitDays', 'Enter whole days from 1 to 365.'],
     ['validity before pickup', { validityDate: '2026-11-19' }, 'validityDate', 'The quote must be valid on the pickup date or later.'],

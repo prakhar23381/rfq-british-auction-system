@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -35,6 +35,15 @@ def log_activity(
     )
     db.add(entry)
     return entry
+
+
+def duration(delta: timedelta) -> str:
+    """A length of time as shown in activity messages: "5 min", "40 s", "2 min 30 s"."""
+    seconds = round(delta.total_seconds())
+    minutes, rest = divmod(seconds, 60)
+    if minutes and rest:
+        return f"{minutes} min {rest} s"
+    return f"{minutes} min" if minutes else f"{rest} s"
 
 
 def money(amount: Decimal, currency: str) -> str:

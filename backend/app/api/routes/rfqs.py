@@ -53,7 +53,7 @@ def list_rfqs(
     db: DbSession,
     clock: AppClock,
     status: AuctionStatus | None = None,
-    search: Annotated[str | None, Query(max_length=100)] = None,
+    search: Annotated[str | None, Query(max_length=100, pattern=r"^[^\x00]*$")] = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> RfqListResponse:

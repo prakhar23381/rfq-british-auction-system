@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatMinutes, previewSchedule } from './auctionPreview'
+import { formatDuration, formatMinutes, previewSchedule } from './auctionPreview'
 
 const at = (h: number, m: number) => Date.UTC(2026, 10, 7, h, m)
 
@@ -67,4 +67,15 @@ describe('formatMinutes', () => {
     [90, '1 h 30 min'],
     [150, '2 h 30 min'],
   ])('%d → %s', (minutes, text) => expect(formatMinutes(minutes)).toBe(text))
+})
+
+describe('formatDuration', () => {
+  it.each([
+    [40, '40 s'],
+    [60, '1 min'],
+    [150, '2 min 30 s'],
+    [300, '5 min'],
+    [3900, '1 h 5 min'],
+    [3930, '1 h 5 min'],
+  ])('%d s → %s', (seconds, text) => expect(formatDuration(seconds)).toBe(text))
 })

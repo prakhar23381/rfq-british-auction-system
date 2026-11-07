@@ -5,6 +5,7 @@ Base URL: `http://localhost:8000`. The interactive OpenAPI reference is served a
 ## Conventions
 
 - JSON bodies, `snake_case` field names.
+- Free-text fields (names, carrier, notes, search) must not contain control characters (tab and newline are fine in notes); they are rejected with `422`.
 - Timestamps are ISO-8601 in UTC (`2026-11-07T12:00:00Z`); dates are `YYYY-MM-DD`.
 - Money is sent as a **string** with two decimals (`"125000.00"`) to avoid floating-point errors.
 - Every response includes `server_time` so clients can correct their clock for countdowns.
@@ -135,7 +136,7 @@ Query parameters: `status` (`SCHEDULED`, `ACTIVE`, `CLOSED`, `FORCE_CLOSED`), `s
     }
   ],
   "stats": {
-    "bid_count": 7, "supplier_count": 3, "extension_count": 2, "total_extended_minutes": 10,
+    "bid_count": 7, "supplier_count": 3, "extension_count": 2, "total_extended_minutes": 10, "total_extended_seconds": 600,
     "first_l1_amount": "140000.00", "current_l1_amount": "125000.00", "savings_pct": "10.71"
   },
   "server_time": "…"
@@ -164,7 +165,7 @@ Returns `{ "items": [Bid], "server_time": "…" }`. Each bid has the quote field
 }
 ```
 
-- Rules: charges ≥ 0 with at most two decimals, total > 0; transit time 1–365 days; quote validity on or after the pickup date; lower than the supplier's previous bid.
+- Rules: charges ≥ 0 with at most two decimals, total > 0 and at most 999,999,999,999.99; transit time 1–365 days; quote validity on or after the pickup date; lower than the supplier's previous bid.
 - Returns `201`:
 
 ```json

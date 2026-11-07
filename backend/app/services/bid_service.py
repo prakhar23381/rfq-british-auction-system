@@ -32,7 +32,7 @@ from app.models import ActivityLog, AuctionConfig, AuctionExtension, Bid, Rfq, U
 from app.realtime.events import EventPublisher
 from app.schemas.bid import BidCreate, ExtensionOut
 from app.services import event_service
-from app.services.activity_service import log_activity, money
+from app.services.activity_service import duration, log_activity, money
 from app.services.lifecycle_service import mark_started
 from app.services.locks import lock_rfq
 from app.services.scheduling import LifecycleScheduler
@@ -220,9 +220,7 @@ def submit_bid(
             ],
         }
         if extension.applied:
-            added = int(
-                (extension.new_close_at - extension.previous_close_at).total_seconds() // 60
-            )
+            added = extension.new_close_at - extension.previous_close_at
             record = AuctionExtension(
                 rfq_id=rfq.id,
                 bid_id=bid.id,
@@ -244,14 +242,14 @@ def submit_bid(
                 type=ActivityType.AUCTION_EXTENDED,
                 bid_id=bid.id,
                 extension_id=record.id,
-                message=f"Auction extended by {added} min{capped_note}. {reason}",
+                message=f"Auction extended by {duration(added)}{capped_note}. {reason}",
                 at=now,
                 meta={
                     **trigger_meta,
                     "previous_close_at": extension.previous_close_at.isoformat(),
                     "new_close_at": extension.new_close_at.isoformat(),
                     "capped": extension.capped,
-                    "extension_minutes": added,
+                    "extension_seconds": round(added.total_seconds()),
                 },
             )
             entries.append(extended_entry)

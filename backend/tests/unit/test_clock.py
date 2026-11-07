@@ -15,3 +15,14 @@ def test_clocks_are_timezone_aware() -> None:
     assert SystemClock().now().tzinfo is not None
     with pytest.raises(ValueError):
         FrozenClock(datetime(2026, 11, 10, 18, 0))
+
+
+def test_durations_in_activity_messages() -> None:
+    from datetime import timedelta
+
+    from app.services.activity_service import duration
+
+    assert duration(timedelta(minutes=5)) == "5 min"
+    assert duration(timedelta(seconds=40)) == "40 s"
+    assert duration(timedelta(minutes=2, seconds=30)) == "2 min 30 s"
+    assert duration(timedelta(seconds=59.6)) == "1 min"
