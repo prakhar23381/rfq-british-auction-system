@@ -115,6 +115,9 @@ class RfqOut(ApiModel):
     closed_at: datetime | None
     created_at: datetime
     buyer: PartyOut
+    version: int = Field(
+        description="Newest activity id; orders this snapshot against live events (see /ws)"
+    )
 
 
 class RankedBidOut(ApiModel):
@@ -171,6 +174,9 @@ class RfqListItem(ApiModel):
     extension_count: int
     bid_count: int
     supplier_count: int
+    version: int = Field(
+        description="Newest activity id; orders this row against live events (see /ws)"
+    )
 
 
 class RfqListResponse(ServerTimed):

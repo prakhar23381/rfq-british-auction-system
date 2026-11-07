@@ -29,8 +29,11 @@ from sqlalchemy.orm import Session
 from app.core.clock import Clock
 from app.domain.auction_engine import derive_status
 from app.domain.enums import ActivityType, AuctionStatus
-from app.models import Bid, Rfq
+from app.models import ActivityLog, Bid, Rfq
+from app.realtime.events import EventPublisher
+from app.services import event_service
 from app.services.activity_service import log_activity, money
+from app.services.locks import lock_rfq
 from app.services.query_service import ranked_latest
 
 logger = logging.getLogger(__name__)
@@ -57,37 +60,31 @@ class LifecycleResult:
     status: AuctionStatus | None = None
     transitions: tuple[ActivityType, ...] = ()
     due_at: datetime | None = None
-
-
-def _lock(db: Session, rfq_id: uuid.UUID, *, skip_locked: bool = False) -> Rfq | None:
-    return db.scalars(
-        select(Rfq).where(Rfq.id == rfq_id).with_for_update(skip_locked=skip_locked)
-    ).one_or_none()
+    activity_ids: tuple[int, ...] = ()
 
 
 def _plural(n: int, word: str) -> str:
     return f"{n} {word}{'' if n == 1 else 's'}"
 
 
-def mark_started(db: Session, rfq: Rfq) -> bool:
+def mark_started(db: Session, rfq: Rfq) -> ActivityLog | None:
     """SCHEDULED -> ACTIVE on a locked row whose start time has passed.
 
     The entry is dated at the scheduled start, so the timeline reads correctly even when this
     runs late (e.g. the worker was down, or a bid arrived before the start job)."""
     if rfq.status != AuctionStatus.SCHEDULED:
-        return False
+        return None
     rfq.status = AuctionStatus.ACTIVE
-    log_activity(
+    return log_activity(
         db,
         rfq_id=rfq.id,
         type=ActivityType.AUCTION_STARTED,
         message=STARTED_MESSAGE,
         at=rfq.bid_start_at,
     )
-    return True
 
 
-def mark_closed(db: Session, rfq: Rfq, now: datetime) -> ActivityType:
+def mark_closed(db: Session, rfq: Rfq, now: datetime) -> ActivityLog:
     """ACTIVE -> CLOSED / FORCE_CLOSED on a locked row whose close time has passed.
 
     FORCE_CLOSED when the close had been pushed all the way to the forced close time."""
@@ -132,34 +129,48 @@ def mark_closed(db: Session, rfq: Rfq, now: datetime) -> ActivityType:
     rfq.status = status
     rfq.closed_at = rfq.current_close_at
     activity_type = ActivityType.AUCTION_FORCE_CLOSED if forced else ActivityType.AUCTION_CLOSED
-    log_activity(
+    return log_activity(
         db, rfq_id=rfq.id, type=activity_type, message=message, at=rfq.current_close_at, meta=meta
     )
-    return activity_type
 
 
-def _advance(db: Session, rfq: Rfq, now: datetime) -> tuple[ActivityType, ...]:
+def _advance(db: Session, rfq: Rfq, now: datetime) -> list[ActivityLog]:
     """Apply every transition that is due at `now` (a late job may need both)."""
-    applied: list[ActivityType] = []
+    entries: list[ActivityLog] = []
     if rfq.status == AuctionStatus.SCHEDULED and now >= rfq.bid_start_at:
-        mark_started(db, rfq)
-        applied.append(ActivityType.AUCTION_STARTED)
+        started = mark_started(db, rfq)
+        assert started is not None
+        entries.append(started)
     if rfq.status == AuctionStatus.ACTIVE and now >= rfq.current_close_at:
-        applied.append(mark_closed(db, rfq, now))
-    return tuple(applied)
+        entries.append(mark_closed(db, rfq, now))
+    return entries
 
 
-def _finish(db: Session, rfq: Rfq, transitions: tuple[ActivityType, ...]) -> LifecycleResult:
+def _finish(
+    db: Session,
+    rfq: Rfq,
+    entries: list[ActivityLog],
+    publisher: EventPublisher,
+    clock: Clock,
+) -> LifecycleResult:
+    db.flush()  # assigns the activity ids
+    transitions = tuple(e.type for e in entries)
+    activity_ids = tuple(e.id for e in entries)
     db.commit()
-    outcome = Outcome.UPDATED if transitions else Outcome.UNCHANGED
-    if transitions:
-        logger.info("RFQ %s: %s", rfq.reference_id, ", ".join(transitions))
-    return LifecycleResult(rfq.id, outcome, rfq.status, transitions)
+    if not entries:
+        return LifecycleResult(rfq.id, Outcome.UNCHANGED, rfq.status)
+    logger.info("RFQ %s: %s", rfq.reference_id, ", ".join(transitions))
+    event_service.publish_lifecycle(publisher, rfq.id, activity_ids, clock.now())
+    return LifecycleResult(
+        rfq.id, Outcome.UPDATED, rfq.status, transitions, activity_ids=activity_ids
+    )
 
 
-def start_auction(db: Session, rfq_id: uuid.UUID, clock: Clock) -> LifecycleResult:
+def start_auction(
+    db: Session, rfq_id: uuid.UUID, clock: Clock, *, publisher: EventPublisher
+) -> LifecycleResult:
     """Job at bid_start_at: open the auction (and close it too if the job is very late)."""
-    rfq = _lock(db, rfq_id)
+    rfq = lock_rfq(db, rfq_id)
     if rfq is None:
         db.rollback()
         return LifecycleResult(rfq_id, Outcome.NOT_FOUND)
@@ -167,15 +178,20 @@ def start_auction(db: Session, rfq_id: uuid.UUID, clock: Clock) -> LifecycleResu
     if rfq.status == AuctionStatus.SCHEDULED and now < rfq.bid_start_at:
         db.rollback()
         return LifecycleResult(rfq_id, Outcome.NOT_DUE, rfq.status, due_at=rfq.bid_start_at)
-    return _finish(db, rfq, _advance(db, rfq, now))
+    return _finish(db, rfq, _advance(db, rfq, now), publisher, clock)
 
 
 def close_auction(
-    db: Session, rfq_id: uuid.UUID, clock: Clock, *, expected_close_at: datetime | None = None
+    db: Session,
+    rfq_id: uuid.UUID,
+    clock: Clock,
+    *,
+    publisher: EventPublisher,
+    expected_close_at: datetime | None = None,
 ) -> LifecycleResult:
     """Job at a close time. A new job is queued after every extension, so the job carries the
     close time it was queued for and does nothing if the close has moved since."""
-    rfq = _lock(db, rfq_id)
+    rfq = lock_rfq(db, rfq_id)
     if rfq is None:
         db.rollback()
         return LifecycleResult(rfq_id, Outcome.NOT_FOUND)
@@ -189,7 +205,7 @@ def close_auction(
     if now < rfq.current_close_at:
         db.rollback()
         return LifecycleResult(rfq_id, Outcome.NOT_DUE, rfq.status, due_at=rfq.current_close_at)
-    return _finish(db, rfq, _advance(db, rfq, now))
+    return _finish(db, rfq, _advance(db, rfq, now), publisher, clock)
 
 
 def due_rfq_ids(db: Session, now: datetime, limit: int = SWEEP_BATCH_SIZE) -> Sequence[uuid.UUID]:
@@ -207,7 +223,9 @@ def due_rfq_ids(db: Session, now: datetime, limit: int = SWEEP_BATCH_SIZE) -> Se
     ).all()
 
 
-def sweep(db: Session, clock: Clock, *, limit: int = SWEEP_BATCH_SIZE) -> list[LifecycleResult]:
+def sweep(
+    db: Session, clock: Clock, *, publisher: EventPublisher, limit: int = SWEEP_BATCH_SIZE
+) -> list[LifecycleResult]:
     """Bring every overdue auction up to date, one short transaction per auction.
 
     Rows locked by a bid in progress are skipped (SKIP LOCKED) rather than waited on; the next
@@ -217,12 +235,12 @@ def sweep(db: Session, clock: Clock, *, limit: int = SWEEP_BATCH_SIZE) -> list[L
     results: list[LifecycleResult] = []
     for rfq_id in ids:
         try:
-            rfq = _lock(db, rfq_id, skip_locked=True)
+            rfq = lock_rfq(db, rfq_id, skip_locked=True)
             if rfq is None:
                 db.rollback()
                 results.append(LifecycleResult(rfq_id, Outcome.BUSY))
                 continue
-            results.append(_finish(db, rfq, _advance(db, rfq, clock.now())))
+            results.append(_finish(db, rfq, _advance(db, rfq, clock.now()), publisher, clock))
         except Exception:
             db.rollback()
             logger.exception("Sweeper failed to update RFQ %s", rfq_id)

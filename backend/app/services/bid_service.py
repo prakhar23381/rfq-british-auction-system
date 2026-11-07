@@ -28,10 +28,13 @@ from app.domain.auction_engine import (
     with_new_bid,
 )
 from app.domain.enums import ActivityType, TriggerType
-from app.models import AuctionConfig, AuctionExtension, Bid, Rfq, User
-from app.schemas.bid import BidCreate
+from app.models import ActivityLog, AuctionConfig, AuctionExtension, Bid, Rfq, User
+from app.realtime.events import EventPublisher
+from app.schemas.bid import BidCreate, ExtensionOut
+from app.services import event_service
 from app.services.activity_service import log_activity, money
 from app.services.lifecycle_service import mark_started
+from app.services.locks import lock_rfq
 from app.services.scheduling import LifecycleScheduler
 
 
@@ -44,10 +47,24 @@ class BidOutcome:
     rank: int
     decision: ExtensionDecision
     reason: str | None  # why the auction was (or would have been) extended
+    activity_ids: tuple[int, ...]
+
+    def extension_out(self) -> ExtensionOut | None:
+        """Set whenever the trigger fired: applied, shortened by the cap, or skipped at it."""
+        extension = self.decision.extension
+        if extension is None:
+            return None
+        return ExtensionOut(
+            applied=extension.applied,
+            previous_close_at=extension.previous_close_at,
+            new_close_at=extension.new_close_at,
+            capped=extension.capped,
+            reason=self.reason or "",
+        )
 
 
 def _lock_rfq(db: Session, rfq_id: uuid.UUID) -> Rfq:
-    rfq = db.scalars(select(Rfq).where(Rfq.id == rfq_id).with_for_update()).one_or_none()
+    rfq = lock_rfq(db, rfq_id)
     if rfq is None:
         raise AppError(ErrorCode.NOT_FOUND, "RFQ not found")
     return rfq
@@ -81,6 +98,7 @@ def submit_bid(
     clock: Clock,
     *,
     scheduler: LifecycleScheduler,
+    publisher: EventPublisher,
 ) -> BidOutcome:
     rfq = _lock_rfq(db, rfq_id)
     now = clock.now()  # read after the lock, so it reflects when the bid is processed
@@ -92,7 +110,9 @@ def submit_bid(
     ):
         raise AppError(ErrorCode.AUCTION_CLOSED, "Bidding for this auction has closed")
     # The start job may not have run yet; open the auction first so the log reads in order.
-    mark_started(db, rfq)
+    entries: list[ActivityLog] = []
+    if (started := mark_started(db, rfq)) is not None:
+        entries.append(started)
     if data.quote_validity_date < rfq.pickup_date:
         message = "Quote must be valid until at least the pickup / service date"
         raise AppError(
@@ -170,7 +190,7 @@ def submit_bid(
     }
     if previous is not None:
         bid_meta["previous_total"] = str(previous.total_amount)
-    log_activity(
+    bid_entry = log_activity(
         db,
         rfq_id=rfq.id,
         type=ActivityType.BID_SUBMITTED,
@@ -182,6 +202,7 @@ def submit_bid(
         at=now,
         meta=bid_meta,
     )
+    entries.append(bid_entry)
 
     reason = None
     if decision.trigger is not None and decision.extension is not None:
@@ -217,7 +238,7 @@ def submit_bid(
             rfq.current_close_at = extension.new_close_at
             rfq.extension_count += 1
             capped_note = " (capped at the forced close time)" if extension.capped else ""
-            log_activity(
+            extended_entry = log_activity(
                 db,
                 rfq_id=rfq.id,
                 type=ActivityType.AUCTION_EXTENDED,
@@ -233,8 +254,9 @@ def submit_bid(
                     "extension_minutes": added,
                 },
             )
+            entries.append(extended_entry)
         else:
-            log_activity(
+            skipped_entry = log_activity(
                 db,
                 rfq_id=rfq.id,
                 type=ActivityType.EXTENSION_SKIPPED,
@@ -246,9 +268,29 @@ def submit_bid(
                 at=now,
                 meta={**trigger_meta, "forced_close_at": rfq.forced_close_at.isoformat()},
             )
+            entries.append(skipped_entry)
 
+    db.flush()  # assigns the activity ids
+    outcome = BidOutcome(
+        rfq=rfq,
+        bid=bid,
+        rank=rank,
+        decision=decision,
+        reason=reason,
+        activity_ids=tuple(e.id for e in entries),
+    )
     db.commit()
+
     if decision.extended:
         # The job queued for the old close time will find the close moved and do nothing.
         scheduler.schedule_close(rfq.id, rfq.current_close_at)
-    return BidOutcome(rfq=rfq, bid=bid, rank=rank, decision=decision, reason=reason)
+    event_service.publish_bid(
+        publisher,
+        rfq_id=rfq.id,
+        bid_id=bid.id,
+        rank=rank,
+        extension=outcome.extension_out(),
+        activity_ids=outcome.activity_ids,
+        now=clock.now(),
+    )
+    return outcome

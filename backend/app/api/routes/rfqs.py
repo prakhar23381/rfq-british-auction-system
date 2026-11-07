@@ -3,7 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, status
 
-from app.api.deps import AppClock, AppScheduler, BuyerUser, DbSession, SupplierUser
+from app.api.deps import AppClock, AppPublisher, AppScheduler, BuyerUser, DbSession, SupplierUser
 from app.domain.auction_engine import rank_label
 from app.domain.enums import AuctionStatus
 from app.schemas.activity import ActivityListResponse
@@ -12,7 +12,6 @@ from app.schemas.bid import (
     BidListResponse,
     BidRfqState,
     BidSubmitResponse,
-    ExtensionOut,
 )
 from app.schemas.common import ErrorResponse
 from app.schemas.rfq import RfqCreate, RfqDetail, RfqListResponse
@@ -36,11 +35,16 @@ ERRORS = {
     responses={k: ERRORS[k] for k in (401, 403, 409, 422)},
 )
 def create_rfq(
-    body: RfqCreate, buyer: BuyerUser, db: DbSession, clock: AppClock, scheduler: AppScheduler
+    body: RfqCreate,
+    buyer: BuyerUser,
+    db: DbSession,
+    clock: AppClock,
+    scheduler: AppScheduler,
+    publisher: AppPublisher,
 ) -> RfqDetail:
     """Create an RFQ run as a British auction (buyers only)."""
     now = clock.now()
-    rfq = rfq_service.create_rfq(db, body, buyer, now, scheduler=scheduler)
+    rfq = rfq_service.create_rfq(db, body, buyer, now, scheduler=scheduler, publisher=publisher)
     return query_service.get_rfq_detail(db, rfq.id, now)
 
 
@@ -95,27 +99,19 @@ def submit_bid(
     db: DbSession,
     clock: AppClock,
     scheduler: AppScheduler,
+    publisher: AppPublisher,
 ) -> BidSubmitResponse:
     """Submit a quote (suppliers only). Each new bid must be lower than your previous one.
     A qualifying bid inside the trigger window extends the auction, never past forced close."""
-    outcome = bid_service.submit_bid(db, rfq_id, supplier, body, clock, scheduler=scheduler)
-    extension = outcome.decision.extension
+    outcome = bid_service.submit_bid(
+        db, rfq_id, supplier, body, clock, scheduler=scheduler, publisher=publisher
+    )
     rfq = outcome.rfq
     return BidSubmitResponse(
         bid=query_service.bid_out(outcome.bid, supplier),
         rank=outcome.rank,
         rank_label=rank_label(outcome.rank),
-        extension=(
-            ExtensionOut(
-                applied=extension.applied,
-                previous_close_at=extension.previous_close_at,
-                new_close_at=extension.new_close_at,
-                capped=extension.capped,
-                reason=outcome.reason or "",
-            )
-            if extension is not None
-            else None
-        ),
+        extension=outcome.extension_out(),
         rfq=BidRfqState(
             status=query_service.status_of(rfq, clock.now()),
             current_close_at=rfq.current_close_at,

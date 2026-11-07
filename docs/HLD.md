@@ -208,7 +208,10 @@ Queuing a job is best effort. If Redis is down when an RFQ is created or extende
 - The API and the workers publish events to Redis. Every API process forwards them to its own subscribed sockets, so this works with several API processes and with events that start in a Celery worker.
 - Events: `bid.submitted`, `auction.extended`, `auction.status`, `listing.updated`, `rfq.created`.
 - Every response and event includes `server_time`. The browser uses it to correct its clock for the countdown.
-- After a reconnect, the browser subscribes again and reloads the page data.
+- **Events can arrive out of order.** Two bids on the same auction commit one after the other, but each publishes after its own commit, so the second bid's event can be sent first. Every event and every REST snapshot therefore carries a `version`: the id of the auction's newest activity entry. The row lock makes it grow with every change. The browser keeps the highest version it has seen and ignores anything older. Event payloads are read in a separate REPEATABLE READ transaction, so the version and the state it describes always match.
+- Each activity entry is sent in exactly one event, so the activity feed can simply append.
+- **Missed events.** If Redis restarts, events published meanwhile are lost. When the API reconnects to Redis it sends `resync` to every socket, and the browser reloads over REST. The browser does the same after its own reconnect. A page opened fresh subscribes first and then loads over REST, so nothing falls in between.
+- Publishing never fails a request: the change is already committed, and a publishing error is only logged.
 
 ---
 
@@ -245,6 +248,8 @@ The assignment leaves these points open; the choices below are deliberate.
 13. **Open bidding.** All suppliers see all bids and ranks, as in an open British auction.
 
 ## 9. Limitations and future work
+
+- **Broker outages delay closes slightly.** When the worker loses its connection to Redis, Celery drops the scheduled jobs it is holding. The 5-second sweep then performs the close, so it can come up to about 5 s late (seen in testing after a Redis restart). Bids are never affected: a bid is accepted by time alone, under the lock. RabbitMQ, or a scheduler that persists jobs, would remove the delay.
 
 - **Authentication:** replace the `X-User-Id` header with real login (OAuth2/JWT) and per-organisation access.
 - **Supplier invitations:** today every supplier can bid on every RFQ.

@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     # How often Celery Beat runs the lifecycle sweeper.
     lifecycle_sweep_seconds: float = 5.0
+    # Redis pub/sub channel that carries live events from API and worker processes to every
+    # API process's WebSocket clients.
+    events_channel: str = "auction-events"
 
 
 @lru_cache

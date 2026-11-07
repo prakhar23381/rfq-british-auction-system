@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import ColumnElement, and_, case, distinct, func, or_, select, true
+from sqlalchemy import ColumnElement, Select, and_, case, distinct, func, or_, select, true
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.errors import AppError, ErrorCode
@@ -69,7 +69,17 @@ def _party(user: User) -> PartyOut:
     return PartyOut(id=user.id, name=user.name, company_name=user.company_name)
 
 
-def rfq_out(rfq: Rfq, now: datetime) -> RfqOut:
+def rfq_version(db: Session, rfq_id: uuid.UUID) -> int:
+    """Id of the auction's newest activity entry. Every change to an auction writes one under
+    the RFQ row lock, so this grows with each committed change (see app/schemas/events.py)."""
+    return db.scalar(_version_expr().where(ActivityLog.rfq_id == rfq_id)) or 0
+
+
+def _version_expr() -> Select[tuple[int]]:
+    return select(func.coalesce(func.max(ActivityLog.id), 0))
+
+
+def rfq_out(rfq: Rfq, now: datetime, version: int) -> RfqOut:
     return RfqOut(
         id=rfq.id,
         reference_id=rfq.reference_id,
@@ -84,6 +94,7 @@ def rfq_out(rfq: Rfq, now: datetime) -> RfqOut:
         closed_at=rfq.closed_at,
         created_at=rfq.created_at,
         buyer=_party(rfq.buyer),
+        version=version,
     )
 
 
@@ -141,6 +152,7 @@ def _listing_rows(
             lowest.c.supplier_name,
             counts.c.bid_count,
             counts.c.supplier_count,
+            _version_expr().where(ActivityLog.rfq_id == Rfq.id).scalar_subquery(),
         )
         .select_from(Rfq)
         .outerjoin(lowest, true())
@@ -152,7 +164,9 @@ def _listing_rows(
     )
 
     items = []
-    for rfq, amount, currency, supplier_name, bid_count, supplier_count in db.execute(stmt):
+    for rfq, amount, currency, supplier_name, bid_count, supplier_count, version in db.execute(
+        stmt
+    ):
         items.append(
             RfqListItem(
                 id=rfq.id,
@@ -171,6 +185,7 @@ def _listing_rows(
                 extension_count=rfq.extension_count,
                 bid_count=bid_count,
                 supplier_count=supplier_count,
+                version=version,
             )
         )
     return items
@@ -294,10 +309,12 @@ def _stats(db: Session, rfq: Rfq, ranking: list[RankedBidOut]) -> RfqStats:
 
 
 def get_rfq_detail(db: Session, rfq_id: uuid.UUID, now: datetime) -> RfqDetail:
+    # Read the version first: the state read afterwards is at least that new.
+    version = rfq_version(db, rfq_id)
     rfq = get_rfq_or_404(db, rfq_id)
     ranking = ranked_bids(db, rfq.id)
     return RfqDetail(
-        rfq=rfq_out(rfq, now),
+        rfq=rfq_out(rfq, now, version),
         auction_config=AuctionConfigOut.model_validate(rfq.auction_config),
         ranking=ranking,
         stats=_stats(db, rfq, ranking),

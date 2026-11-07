@@ -31,6 +31,7 @@ from app.core.clock import FrozenClock, utc_now
 from app.db import SessionLocal
 from app.domain.enums import TriggerType, UserRole
 from app.models import Rfq, User
+from app.realtime.events import NullPublisher
 from app.schemas.bid import BidCreate
 from app.schemas.rfq import AuctionConfigIn, RfqCreate
 from app.services import bid_service, lifecycle_service, rfq_service
@@ -127,6 +128,7 @@ class Scenario:
             session.get_one(User, buyer.id),
             self.clock.now(),
             scheduler=NullScheduler(),  # jobs are queued once, after the replay (see run)
+            publisher=NullPublisher(),
         )
 
     def bid(self, supplier: SeedUser, total: int, when: datetime, transit_days: int = 24) -> None:
@@ -141,7 +143,13 @@ class Scenario:
         )
         supplier_user = self.session.get_one(User, supplier.id)
         bid_service.submit_bid(
-            self.session, self.rfq.id, supplier_user, body, self.clock, scheduler=NullScheduler()
+            self.session,
+            self.rfq.id,
+            supplier_user,
+            body,
+            self.clock,
+            scheduler=NullScheduler(),
+            publisher=NullPublisher(),
         )
 
 
@@ -209,7 +217,7 @@ def run(
     users = seed_users(session)
     rfqs = seed_rfqs(session, now)
     # Close the auctions whose time is up, then queue jobs for the rest.
-    lifecycle_service.sweep(session, FrozenClock(now))
+    lifecycle_service.sweep(session, FrozenClock(now), publisher=NullPublisher())
     for rfq in session.scalars(select(Rfq)):
         schedule_lifecycle(scheduler or NullScheduler(), rfq)
     return users, rfqs

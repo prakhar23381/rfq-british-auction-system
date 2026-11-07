@@ -3,7 +3,8 @@
 import threading
 import time
 import uuid
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -15,12 +16,18 @@ from app.core.clock import FrozenClock, utc_now
 from app.db import SessionLocal
 from app.domain.enums import ActivityType, AuctionStatus, UserRole
 from app.models import ActivityLog, Rfq, User
-from app.services import lifecycle_service
+from app.realtime.events import NullPublisher
+from app.schemas.bid import BidCreate
+from app.services import bid_service, lifecycle_service
 from app.services.lifecycle_service import Outcome
+from app.services.scheduling import NullScheduler
 from app.workers import scheduling as celery_scheduling
 from app.workers import tasks
+from app.workers.celery_app import celery_app
 from tests.factories import T0, make_bid, make_rfq, make_user
 from tests.fakes import RecordingScheduler
+
+NO_EVENTS = NullPublisher()
 
 START = T0
 CLOSE = T0 + timedelta(hours=1)
@@ -66,7 +73,7 @@ def test_start_opens_a_scheduled_auction_once(db: Session, buyer: User) -> None:
     rfq = scheduled(db, buyer)
     clock = FrozenClock(START + timedelta(seconds=2))
 
-    result = lifecycle_service.start_auction(db, rfq.id, clock)
+    result = lifecycle_service.start_auction(db, rfq.id, clock, publisher=NO_EVENTS)
     assert result.outcome == Outcome.UPDATED
     assert result.transitions == (ActivityType.AUCTION_STARTED,)
     assert stored(db, rfq).status == AuctionStatus.ACTIVE
@@ -74,14 +81,16 @@ def test_start_opens_a_scheduled_auction_once(db: Session, buyer: User) -> None:
     assert (entry.type, entry.message) == (ActivityType.AUCTION_STARTED, "Bidding opened")
     assert entry.created_at == START  # dated at the scheduled start, not when the job ran
 
-    again = lifecycle_service.start_auction(db, rfq.id, clock)
+    again = lifecycle_service.start_auction(db, rfq.id, clock, publisher=NO_EVENTS)
     assert again.outcome == Outcome.UNCHANGED
     assert len(log(db, rfq)) == 1
 
 
 def test_start_job_that_fires_early_asks_to_retry(db: Session, buyer: User) -> None:
     rfq = scheduled(db, buyer)
-    result = lifecycle_service.start_auction(db, rfq.id, FrozenClock(START - MIN))
+    result = lifecycle_service.start_auction(
+        db, rfq.id, FrozenClock(START - MIN), publisher=NO_EVENTS
+    )
     assert result.outcome == Outcome.NOT_DUE
     assert result.due_at == START
     assert stored(db, rfq).status == AuctionStatus.SCHEDULED
@@ -90,8 +99,14 @@ def test_start_job_that_fires_early_asks_to_retry(db: Session, buyer: User) -> N
 def test_unknown_rfq_is_reported_not_raised(db: Session) -> None:
     missing = uuid.uuid4()
     clock = FrozenClock(T0)
-    assert lifecycle_service.start_auction(db, missing, clock).outcome == Outcome.NOT_FOUND
-    assert lifecycle_service.close_auction(db, missing, clock).outcome == Outcome.NOT_FOUND
+    assert (
+        lifecycle_service.start_auction(db, missing, clock, publisher=NO_EVENTS).outcome
+        == Outcome.NOT_FOUND
+    )
+    assert (
+        lifecycle_service.close_auction(db, missing, clock, publisher=NO_EVENTS).outcome
+        == Outcome.NOT_FOUND
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -109,7 +124,9 @@ def test_close_records_l1_and_is_idempotent(db: Session, buyer: User) -> None:
     db.commit()
     clock = FrozenClock(CLOSE + timedelta(seconds=1))
 
-    result = lifecycle_service.close_auction(db, rfq.id, clock, expected_close_at=CLOSE)
+    result = lifecycle_service.close_auction(
+        db, rfq.id, clock, expected_close_at=CLOSE, publisher=NO_EVENTS
+    )
     assert (result.outcome, result.status) == (Outcome.UPDATED, AuctionStatus.CLOSED)
 
     rfq = stored(db, rfq)
@@ -125,15 +142,17 @@ def test_close_records_l1_and_is_idempotent(db: Session, buyer: User) -> None:
     assert entry.meta["l1"]["total_amount"] == "1350.00"
     assert (entry.meta["bid_count"], entry.meta["supplier_count"]) == (3, 2)
 
-    again = lifecycle_service.close_auction(db, rfq.id, clock, expected_close_at=CLOSE)
+    again = lifecycle_service.close_auction(
+        db, rfq.id, clock, expected_close_at=CLOSE, publisher=NO_EVENTS
+    )
     assert again.outcome == Outcome.UNCHANGED
-    assert lifecycle_service.sweep(db, clock) == []
+    assert lifecycle_service.sweep(db, clock, publisher=NO_EVENTS) == []
     assert len(log(db, rfq)) == 1
 
 
 def test_close_with_no_bids(db: Session, buyer: User) -> None:
     rfq = active(db, buyer)
-    lifecycle_service.close_auction(db, rfq.id, FrozenClock(CLOSE))
+    lifecycle_service.close_auction(db, rfq.id, FrozenClock(CLOSE), publisher=NO_EVENTS)
     [entry] = log(db, rfq)
     assert entry.message == "Auction closed with no bids"
     assert entry.meta["l1"] is None
@@ -144,7 +163,7 @@ def test_close_at_the_forced_cap_is_a_force_close(db: Session, buyer: User) -> N
     make_bid(db, rfq, make_user(db, company="Swift Cargo"))
     db.commit()
 
-    result = lifecycle_service.close_auction(db, rfq.id, FrozenClock(FORCED))
+    result = lifecycle_service.close_auction(db, rfq.id, FrozenClock(FORCED), publisher=NO_EVENTS)
     assert result.status == AuctionStatus.FORCE_CLOSED
     [entry] = log(db, rfq)
     assert entry.type == ActivityType.AUCTION_FORCE_CLOSED
@@ -156,7 +175,7 @@ def test_close_at_the_forced_cap_is_a_force_close(db: Session, buyer: User) -> N
 def test_a22_close_job_for_an_old_close_time_does_nothing(db: Session, buyer: User) -> None:
     rfq = active(db, buyer, current_close=CLOSE + 5 * MIN, extension_count=1)
     result = lifecycle_service.close_auction(
-        db, rfq.id, FrozenClock(CLOSE), expected_close_at=CLOSE
+        db, rfq.id, FrozenClock(CLOSE), expected_close_at=CLOSE, publisher=NO_EVENTS
     )
     assert result.outcome == Outcome.STALE
     assert stored(db, rfq).status == AuctionStatus.ACTIVE
@@ -166,7 +185,11 @@ def test_a22_close_job_for_an_old_close_time_does_nothing(db: Session, buyer: Us
 def test_close_job_that_fires_early_asks_to_retry(db: Session, buyer: User) -> None:
     rfq = active(db, buyer)
     result = lifecycle_service.close_auction(
-        db, rfq.id, FrozenClock(CLOSE - timedelta(seconds=1)), expected_close_at=CLOSE
+        db,
+        rfq.id,
+        FrozenClock(CLOSE - timedelta(seconds=1)),
+        expected_close_at=CLOSE,
+        publisher=NO_EVENTS,
     )
     assert (result.outcome, result.due_at) == (Outcome.NOT_DUE, CLOSE)
     assert stored(db, rfq).status == AuctionStatus.ACTIVE
@@ -174,7 +197,9 @@ def test_close_job_that_fires_early_asks_to_retry(db: Session, buyer: User) -> N
 
 def test_very_late_job_starts_then_closes_in_order(db: Session, buyer: User) -> None:
     rfq = scheduled(db, buyer)  # the start job never ran
-    result = lifecycle_service.close_auction(db, rfq.id, FrozenClock(CLOSE + timedelta(hours=3)))
+    result = lifecycle_service.close_auction(
+        db, rfq.id, FrozenClock(CLOSE + timedelta(hours=3)), publisher=NO_EVENTS
+    )
     assert result.transitions == (ActivityType.AUCTION_STARTED, ActivityType.AUCTION_CLOSED)
     assert [(e.type, e.created_at) for e in log(db, rfq)] == [
         (ActivityType.AUCTION_STARTED, START),
@@ -195,15 +220,19 @@ def test_a23_sweeper_catches_up_overdue_auctions_only(db: Session, buyer: User) 
     future = make_rfq(db, buyer, start=now + MIN, close=now + 2 * MIN, forced=now + 3 * MIN)
     finished = active(db, buyer, reference_id="DONE")
     db.commit()
-    lifecycle_service.close_auction(db, finished.id, FrozenClock(now))
+    lifecycle_service.close_auction(db, finished.id, FrozenClock(now), publisher=NO_EVENTS)
 
-    results = {r.rfq_id: r for r in lifecycle_service.sweep(db, FrozenClock(now))}
+    results = {
+        r.rfq_id: r for r in lifecycle_service.sweep(db, FrozenClock(now), publisher=NO_EVENTS)
+    }
     assert set(results) == {due_start.id, due_close.id}
     assert results[due_start.id].status == AuctionStatus.ACTIVE
     assert results[due_close.id].status == AuctionStatus.CLOSED
     assert stored(db, future).status == AuctionStatus.SCHEDULED
 
-    assert lifecycle_service.sweep(db, FrozenClock(now)) == []  # nothing left to do
+    assert (
+        lifecycle_service.sweep(db, FrozenClock(now), publisher=NO_EVENTS) == []
+    )  # nothing left to do
 
 
 def test_sweeper_skips_an_auction_locked_by_a_bid(db: Session, buyer: User) -> None:
@@ -212,12 +241,12 @@ def test_sweeper_skips_an_auction_locked_by_a_bid(db: Session, buyer: User) -> N
     with SessionLocal() as bidder:
         bidder.scalars(select(Rfq).where(Rfq.id == rfq.id).with_for_update()).one()
         started = time.monotonic()
-        [result] = lifecycle_service.sweep(db, clock)
+        [result] = lifecycle_service.sweep(db, clock, publisher=NO_EVENTS)
         assert result.outcome == Outcome.BUSY
         assert time.monotonic() - started < 2  # skipped, not waited on
         bidder.rollback()
 
-    [result] = lifecycle_service.sweep(db, clock)
+    [result] = lifecycle_service.sweep(db, clock, publisher=NO_EVENTS)
     assert result.status == AuctionStatus.CLOSED
 
 
@@ -228,13 +257,13 @@ def test_one_failing_auction_does_not_stop_the_sweep(
     fine = active(db, buyer, reference_id="FINE")
     real_advance = lifecycle_service._advance
 
-    def flaky(session: Session, rfq: Rfq, now: datetime) -> tuple[ActivityType, ...]:
+    def flaky(session: Session, rfq: Rfq, now: datetime) -> list[ActivityLog]:
         if rfq.id == broken.id:
             raise RuntimeError("boom")
         return real_advance(session, rfq, now)
 
     monkeypatch.setattr(lifecycle_service, "_advance", flaky)
-    results = lifecycle_service.sweep(db, FrozenClock(CLOSE))
+    results = lifecycle_service.sweep(db, FrozenClock(CLOSE), publisher=NO_EVENTS)
     assert [r.rfq_id for r in results] == [fine.id]
     assert stored(db, fine).status == AuctionStatus.CLOSED
     assert stored(db, broken).status == AuctionStatus.ACTIVE  # retried by the next sweep
@@ -266,7 +295,11 @@ def test_a21_close_job_waits_for_a_bid_in_progress_and_sees_its_extension(
             with SessionLocal() as worker:
                 results.append(
                     lifecycle_service.close_auction(
-                        worker, rfq.id, FrozenClock(CLOSE), expected_close_at=CLOSE
+                        worker,
+                        rfq.id,
+                        FrozenClock(CLOSE),
+                        expected_close_at=CLOSE,
+                        publisher=NO_EVENTS,
                     )
                 )
 
@@ -290,7 +323,7 @@ def test_a21_bid_after_the_close_job_ran_is_rejected(
     rfq = active(db, buyer)
     supplier = make_user(db)
     db.commit()
-    lifecycle_service.close_auction(db, rfq.id, FrozenClock(CLOSE))
+    lifecycle_service.close_auction(db, rfq.id, FrozenClock(CLOSE), publisher=NO_EVENTS)
 
     clock.set(CLOSE)
     res = client.post(
@@ -334,7 +367,47 @@ def test_first_bid_opens_a_scheduled_auction_before_the_start_job(
         ActivityType.AUCTION_STARTED,
         ActivityType.BID_SUBMITTED,
     ]
-    assert lifecycle_service.start_auction(db, rfq.id, clock).outcome == Outcome.UNCHANGED
+    assert (
+        lifecycle_service.start_auction(db, rfq.id, clock, publisher=NO_EVENTS).outcome
+        == Outcome.UNCHANGED
+    )
+
+
+def test_lock_refreshes_a_stale_copy_held_by_the_session(db: Session, buyer: User) -> None:
+    """Regression: the session already holds the RFQ (status SCHEDULED) when another session
+    opens the auction. After taking the lock, the job must see ACTIVE, not log a second start."""
+    rfq = scheduled(db, buyer)
+    with SessionLocal() as other:
+        lifecycle_service.start_auction(other, rfq.id, FrozenClock(START), publisher=NO_EVENTS)
+    assert rfq.status == AuctionStatus.SCHEDULED  # stale in-memory copy
+
+    result = lifecycle_service.close_auction(db, rfq.id, FrozenClock(CLOSE), publisher=NO_EVENTS)
+    assert result.transitions == (ActivityType.AUCTION_CLOSED,)
+    assert [e.type for e in log(db, rfq)].count(ActivityType.AUCTION_STARTED) == 1
+
+
+def test_bid_lock_sees_an_extension_made_by_another_session(db: Session, buyer: User) -> None:
+    """Regression: with a stale close time in memory, a bid after the original close (but
+    before the extended one) would be rejected as AUCTION_CLOSED."""
+    rfq = active(db, buyer)
+    supplier = make_user(db)
+    db.commit()
+    with SessionLocal() as other:
+        row = other.get_one(Rfq, rfq.id)
+        row.current_close_at = CLOSE + 5 * MIN
+        row.extension_count = 1
+        other.commit()
+
+    body = BidCreate(carrier_name="Line", freight_charges=Decimal(100), origin_charges=Decimal(0),
+                     destination_charges=Decimal(0), transit_time_days=10,
+                     quote_validity_date=date(2026, 12, 31))  # fmt: skip
+    outcome = bid_service.submit_bid(
+        db, rfq.id, supplier, body, FrozenClock(CLOSE + MIN),
+        scheduler=NullScheduler(), publisher=NO_EVENTS,
+    )  # fmt: skip
+    # Accepted against the extended close, and extended again from it (first bid = new L1).
+    assert outcome.decision.extension is not None
+    assert outcome.decision.extension.previous_close_at == CLOSE + 5 * MIN
 
 
 # ---------------------------------------------------------------------------
@@ -460,6 +533,6 @@ def test_celery_scheduler_survives_a_broker_outage(
 
 
 def test_beat_runs_the_sweeper() -> None:
-    entry = tasks.celery_app.conf.beat_schedule["sweep-auctions"]
+    entry = celery_app.conf.beat_schedule["sweep-auctions"]
     assert entry["task"] == tasks.sweep_auctions.name == "auction.sweep"
     assert entry["schedule"] == 5.0

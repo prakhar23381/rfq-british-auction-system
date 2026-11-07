@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from app.core.redis_client import get_redis
 from app.db import get_db
 from app.main import app
+from tests.waiting import wait_until
 
 
 def _client(db_ok: bool, redis_ok: bool) -> TestClient:
@@ -24,13 +25,22 @@ def teardown_function() -> None:
 
 
 def test_health_ok() -> None:
-    res = _client(db_ok=True, redis_ok=True).get("/api/health")
+    with _client(db_ok=True, redis_ok=True) as client:  # runs the lifespan: event relay
+        wait_until(lambda: app.state.event_relay.is_listening)
+        res = client.get("/api/health")
     assert res.status_code == 200
     body = res.json()
     assert body["status"] == "ok"
     assert body["db"] == "ok"
     assert body["redis"] == "ok"
+    assert body["realtime"] == "ok"
     assert body["server_time"]
+
+
+def test_health_reports_event_relay_down() -> None:
+    body = _client(db_ok=True, redis_ok=True).get("/api/health").json()  # no lifespan
+    assert body["status"] == "error"
+    assert body["realtime"] == "error"
 
 
 def test_health_reports_failing_dependency() -> None:

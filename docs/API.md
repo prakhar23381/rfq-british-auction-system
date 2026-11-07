@@ -41,7 +41,7 @@ Base URL: `http://localhost:8000`. The interactive OpenAPI reference is served a
 
 | Method | Path | Role | Description |
 |---|---|---|---|
-| GET | `/api/health` | — | Liveness, database and Redis status |
+| GET | `/api/health` | — | Liveness: database, Redis and the live-event relay |
 | GET | `/api/meta/time` | — | Server time |
 | GET | `/api/users` | — | Seeded users (for choosing the acting user) |
 | GET | `/api/users/me` | Any | The user identified by `X-User-Id` |
@@ -94,7 +94,8 @@ Query parameters: `status` (`SCHEDULED`, `ACTIVE`, `CLOSED`, `FORCE_CLOSED`), `s
       "forced_close_at": "2026-11-07T13:00:00Z",
       "extension_count": 2,
       "bid_count": 7,
-      "supplier_count": 3
+      "supplier_count": 3,
+      "version": 42
     }
   ],
   "page": 1,
@@ -115,7 +116,8 @@ Query parameters: `status` (`SCHEDULED`, `ACTIVE`, `CLOSED`, `FORCE_CLOSED`), `s
     "pickup_date": "2026-11-20", "bid_start_at": "…", "bid_close_at": "…",
     "current_close_at": "…", "forced_close_at": "…", "extension_count": 2,
     "closed_at": null, "created_at": "…",
-    "buyer": { "id": "…", "name": "…", "company_name": "…" }
+    "buyer": { "id": "…", "name": "…", "company_name": "…" },
+    "version": 42
   },
   "auction_config": { "trigger_window_minutes": 10, "extension_duration_minutes": 5, "trigger_type": "L1_CHANGE" },
   "ranking": [
@@ -217,7 +219,9 @@ Messages carry no clock times (the UI formats `created_at` and the times in `met
 
 ## WebSocket — `/ws`
 
-Client messages:
+Connect to `ws://localhost:8000/ws` (the Vite dev server proxies `/ws`). No user header is needed: everything sent is also public over REST.
+
+Client messages (JSON text frames):
 
 ```json
 { "action": "subscribe", "channel": "rfq:6f1c…" }
@@ -226,16 +230,26 @@ Client messages:
 { "action": "ping" }
 ```
 
-Server messages share one envelope:
+Every server message uses one envelope:
 
 ```json
-{ "type": "auction.extended", "channel": "rfq:6f1c…", "data": { … }, "server_time": "…" }
+{ "type": "auction.extended", "channel": "rfq:6f1c…", "data": { … }, "server_time": "2026-11-07T12:35:00.123456Z" }
 ```
 
 | Type | Channel | `data` |
 |---|---|---|
-| `bid.submitted` | `rfq:{id}` | `ranking`, `bid`, `activity` |
-| `auction.extended` | `rfq:{id}` | `previous_close_at`, `new_close_at`, `capped`, `reason`, `activity` |
-| `auction.status` | `rfq:{id}` | `status`, `current_close_at`, `activity` |
-| `listing.updated` | `listing` | `item` (listing row) |
-| `rfq.created` | `listing` | `item` (listing row) |
+| `subscribed` / `unsubscribed` | the channel | `{}` |
+| `pong` | `null` | `{}` |
+| `error` | `null` | `code` (`INVALID_MESSAGE`, `UNKNOWN_ACTION`, `INVALID_CHANNEL`, `TOO_MANY_SUBSCRIPTIONS`), `message`. The connection stays open. |
+| `resync` | `null` | `{}`: live events may have been missed (the server lost Redis for a while). Reload over REST. |
+| `bid.submitted` | `rfq:{id}` | `version`, `bid`, `rank`, `rank_label`, `extension` (as in the submit-bid response), `rfq`, `ranking`, `stats`, `activity` |
+| `auction.extended` | `rfq:{id}` | `version`, `previous_close_at`, `new_close_at`, `capped`, `reason`, `extension_count`, `activity` |
+| `auction.status` | `rfq:{id}` | `version`, `status`, `rfq`, `activity`: the auction opened or closed |
+| `listing.updated` | `listing` | `version`, `item` (a listing row) |
+| `rfq.created` | `listing` | `version`, `item` |
+
+- Channels are `listing` and `rfq:<rfq id>`, at most 50 per connection. Unknown RFQ ids are accepted; they just never receive events.
+- One change sends its events in this order: `auction.status` (if a bid opened the auction), `bid.submitted`, `auction.extended`, `listing.updated`. They all carry the same `version`.
+- **Ordering:** `version` is the auction's newest activity id, and grows with every change. REST responses carry it too (`rfq.version` in details, `version` on each listing row). Keep the highest version you have per auction, and ignore events with a lower one: events from two quick changes can arrive in either order.
+- `activity` holds the entries written by that change, oldest first. Each entry is sent in exactly one event.
+- On page load: subscribe first, then fetch over REST. After a reconnect or a `resync`: subscribe again and refetch.

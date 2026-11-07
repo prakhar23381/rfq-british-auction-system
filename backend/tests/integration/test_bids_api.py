@@ -19,6 +19,7 @@ from app.core.errors import AppError, ErrorCode
 from app.db import SessionLocal
 from app.domain.enums import ActivityType, AuctionStatus, TriggerType, UserRole
 from app.models import ActivityLog, AuctionExtension, Bid, Rfq, User
+from app.realtime.events import NullPublisher
 from app.schemas.bid import BidCreate
 from app.services import bid_service, lifecycle_service
 from app.services.lifecycle_service import Outcome
@@ -355,9 +356,13 @@ def test_a15_worked_example_until_force_close(
     # A close job was queued for every new close time; only the last one closes the auction.
     assert scheduler.closes == [(rfq.id, at(18, m)) for m in (5, 10, 15, 20)]
     for _, close_at in scheduler.closes[:-1]:
-        stale = lifecycle_service.close_auction(db, rfq.id, clock, expected_close_at=close_at)
+        stale = lifecycle_service.close_auction(
+            db, rfq.id, clock, publisher=NullPublisher(), expected_close_at=close_at
+        )
         assert stale.outcome == Outcome.STALE
-    done = lifecycle_service.close_auction(db, rfq.id, clock, expected_close_at=at(18, 20))
+    done = lifecycle_service.close_auction(
+        db, rfq.id, clock, publisher=NullPublisher(), expected_close_at=at(18, 20)
+    )
     assert done.outcome == Outcome.UPDATED
     assert done.status == AuctionStatus.FORCE_CLOSED
     final = client.get(f"/api/rfqs/{rfq.id}/activity").json()["items"][0]
@@ -420,7 +425,13 @@ def test_a20_concurrent_bids_keep_every_invariant(db: Session) -> None:
                 quote_validity_date=date(2027, 1, 1),
             )
             bid_service.submit_bid(
-                session, rfq_id, supplier, body, SystemClock(), scheduler=NullScheduler()
+                session,
+                rfq_id,
+                supplier,
+                body,
+                SystemClock(),
+                scheduler=NullScheduler(),
+                publisher=NullPublisher(),
             )
             return True
         except AppError as exc:

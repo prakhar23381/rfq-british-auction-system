@@ -11,7 +11,9 @@ from app.domain.auction_engine import derive_status
 from app.domain.enums import ActivityType, AuctionStatus
 from app.models import AuctionConfig, Rfq, User
 from app.models.rfq import RFQ_REFERENCE_SEQ
+from app.realtime.events import EventPublisher
 from app.schemas.rfq import RfqCreate
+from app.services import event_service
 from app.services.activity_service import log_activity
 from app.services.lifecycle_service import STARTED_MESSAGE
 from app.services.scheduling import LifecycleScheduler, schedule_lifecycle
@@ -38,6 +40,7 @@ def create_rfq(
     now: datetime,
     *,
     scheduler: LifecycleScheduler,
+    publisher: EventPublisher,
 ) -> Rfq:
     if data.bid_start_at < now - START_TIME_TOLERANCE:
         raise AppError(
@@ -101,4 +104,5 @@ def create_rfq(
         )
     db.commit()
     schedule_lifecycle(scheduler, rfq)  # after commit, so a job never sees an uncommitted row
+    event_service.publish_rfq_created(publisher, rfq.id, now)
     return rfq
