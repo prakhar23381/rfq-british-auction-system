@@ -8,7 +8,7 @@ PY       := $(VENV)/bin/python
 CELERY   := cd $(BACKEND) && .venv/bin/celery -A app.workers.celery_app
 
 .PHONY: help up down logs setup venv install env api worker beat web migrate migration \
-        seed test test-db lint fmt typecheck check
+        seed test test-web test-db lint fmt typecheck check api-types
 
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -64,6 +64,9 @@ seed: ## Seed demo data (make seed args=--reset to wipe first)
 test: ## Run backend tests
 	cd $(BACKEND) && .venv/bin/pytest
 
+test-web: ## Run frontend tests (Vitest)
+	cd $(FRONTEND) && npm test
+
 lint: ## Lint backend (ruff) and frontend (oxlint)
 	cd $(BACKEND) && .venv/bin/ruff check . && .venv/bin/ruff format --check .
 	cd $(FRONTEND) && npm run lint
@@ -75,5 +78,12 @@ typecheck: ## mypy (backend) + tsc (frontend)
 	cd $(BACKEND) && .venv/bin/mypy app scripts
 	cd $(FRONTEND) && npm run typecheck
 
-check: lint typecheck test ## Everything CI runs
+check: lint typecheck test test-web ## Everything CI runs
 	cd $(FRONTEND) && npm run build
+
+OPENAPI_DUMP := $(FRONTEND)/node_modules/.cache/openapi.json
+
+api-types: ## Regenerate frontend API types from the backend's OpenAPI schema (no server needed)
+	mkdir -p $(dir $(OPENAPI_DUMP))
+	cd $(BACKEND) && .venv/bin/python -c "import json; from app.main import app; print(json.dumps(app.openapi()))" > ../$(OPENAPI_DUMP)
+	cd $(FRONTEND) && npx -y -p openapi-typescript@7 -p typescript@5 openapi-typescript node_modules/.cache/openapi.json -o src/api/schema.d.ts

@@ -1,51 +1,138 @@
-/* Placeholder styles for the Stage 0 shell. Replaced by Tailwind in Stage 8. */
-:root {
-  --bg: #ffffff;
-  --fg: #1f2328;
-  --muted: #656d76;
-  --ok: #1a7f37;
-  --bad: #cf222e;
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  color: var(--fg);
-  background: var(--bg);
-}
+@import 'tailwindcss';
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0d1117;
-    --fg: #e6edf3;
-    --muted: #8d96a0;
-    --ok: #3fb950;
-    --bad: #f85149;
+/*
+ * Visual style: dark violet, adapted from the local DESIGN.md (see CONTEXT.md §10.0).
+ * Three brand colours: periwinkle (actions), purple (identity), amber (time & extensions only).
+ */
+@theme {
+  --font-sans: 'Inter Tight Variable', 'Inter Tight', system-ui, sans-serif;
+  --font-serif: 'Instrument Serif', Georgia, serif;
+  --font-mono: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-navy: #0d0830;
+  --color-night: #0b0626;
+  --color-ink: #f4f2ff;
+  --color-ink-2: rgb(236 232 255 / 0.72);
+  --color-ink-3: rgb(220 214 255 / 0.6);
+  --color-line: rgb(196 178 255 / 0.15);
+  --color-line-soft: rgb(190 170 255 / 0.08);
+
+  --color-peri: #6f78ff;
+  --color-peri-2: #8d94ff;
+  --color-violet: #9b8cff;
+  --color-violet-deep: #7a5cff;
+  --color-amber: #ffb86b;
+  --color-amber-2: #ffd29e;
+
+  --color-mint: #5ee6a8;
+  --color-mint-2: #7cf0bd;
+  --color-rose: #ff8fd8;
+  --color-danger: #ff6b81;
+  --color-lilac: #b3a8e6;
+
+  --animate-live: live-pulse 2s ease-in-out infinite;
+  --animate-flash: row-flash 1.4s ease-out;
+  --animate-rise: rise 0.35s cubic-bezier(0.2, 0.75, 0.2, 1);
+
+  @keyframes live-pulse {
+    50% {
+      opacity: 0.35;
+    }
+  }
+  @keyframes row-flash {
+    from {
+      background-color: rgb(141 148 255 / 0.22);
+    }
+    to {
+      background-color: transparent;
+    }
+  }
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
   }
 }
 
-body {
-  margin: 0;
-  background: var(--bg);
+/* Translucent violet card with a frosted backdrop: headers, forms, side cards. */
+@utility glass {
+  background: linear-gradient(160deg, rgb(110 90 240 / 0.14), rgb(60 40 150 / 0.08));
+  border: 1px solid rgb(205 190 255 / 0.16);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.08),
+    0 24px 60px rgb(8 3 30 / 0.28);
+  backdrop-filter: blur(22px) saturate(1.35);
 }
 
-.shell {
-  max-width: 640px;
-  margin: 48px auto;
-  padding: 0 16px;
+/* More opaque surface for tables, so numbers stay readable. */
+@utility panel {
+  background: linear-gradient(180deg, rgb(30 20 78 / 0.86), rgb(20 13 56 / 0.9));
+  border: 1px solid var(--color-line);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.06),
+    0 30px 80px rgb(6 2 30 / 0.45);
 }
 
-.muted {
-  color: var(--muted);
+/*
+ * Opaque floating surface for menus and toasts. Glass can't be used there: a backdrop blur
+ * inside the (already blurred) sticky header has nothing to blur, so content shows through.
+ */
+@utility popover {
+  background: linear-gradient(160deg, rgb(40 28 104 / 0.98), rgb(22 14 62 / 0.98));
+  border: 1px solid rgb(205 190 255 / 0.2);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.08),
+    0 24px 60px rgb(4 1 20 / 0.6);
 }
 
-.checks {
-  list-style: none;
-  padding: 0;
-  line-height: 1.8;
+/* Logo mark. */
+@utility orb {
+  border-radius: 9999px;
+  background: radial-gradient(circle at 32% 30%, #fff 0 8%, #c9c4ff 22%, #8d94ff 50%, #5a3fd8 80%);
+  box-shadow:
+    0 0 14px rgb(141 148 255 / 0.55),
+    inset -3px -4px 8px rgb(40 20 140 / 0.5);
 }
 
-.ok {
-  color: var(--ok);
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html {
+    background: var(--color-navy);
+  }
+
+  body {
+    min-height: 100dvh;
+    background: linear-gradient(180deg, #160c40 0%, #0f0832 50%, #0b0626 100%) fixed;
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-peri-2);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: rgb(141 148 255 / 0.35);
+  }
 }
 
-.error,
-.bad {
-  color: var(--bad);
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

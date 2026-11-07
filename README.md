@@ -41,14 +41,16 @@ Run `make help` to list all commands.
 ## Checks
 
 ```bash
-make check     # ruff + oxlint, mypy + tsc, pytest, frontend build
+make check     # ruff + oxlint, mypy + tsc, pytest, Vitest, frontend build
+make test-web  # frontend tests only
+make api-types # regenerate frontend/src/api/schema.d.ts after changing API schemas
 ```
 
 ## Repository layout
 
 ```
 backend/    FastAPI app, SQLAlchemy models, Alembic migrations, Celery tasks, tests
-frontend/   React + TypeScript SPA (Vite)
+frontend/   React + TypeScript SPA (Vite, Tailwind, TanStack Query, React Router)
 docs/       HLD, schema design, API reference
 infra/      Docker init scripts
 ```
