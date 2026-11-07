@@ -59,7 +59,12 @@ services:
     <<: *backend
     command: ["celery", "-A", "app.workers.celery_app", "worker", "-l", "info"]
     healthcheck:
-      disable: true
+      # The worker answers a ping through the broker.
+      test: ["CMD-SHELL", "celery -A app.workers.celery_app inspect ping -d celery@$$HOSTNAME --timeout 5"]
+      interval: 30s
+      timeout: 15s
+      start_period: 20s
+      retries: 3
     depends_on:
       migrate: { condition: service_completed_successfully }
 
@@ -67,7 +72,12 @@ services:
     <<: *backend
     command: ["celery", "-A", "app.workers.celery_app", "beat", "-l", "info", "-s", "/tmp/celerybeat-schedule"]
     healthcheck:
-      disable: true
+      # Beat is alive and can reach the broker it sends the sweep to.
+      test: ["CMD", "python", "-c", "import redis; from app.config import get_settings; redis.Redis.from_url(get_settings().redis_url).ping()"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
     depends_on:
       migrate: { condition: service_completed_successfully }
 
@@ -77,6 +87,11 @@ services:
     ports:
       - "8080:80"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
     depends_on:
       api: { condition: service_healthy }
 
