@@ -92,10 +92,10 @@ describe('App shell', () => {
     expect(screen.getByRole('link', { name: 'Go to auctions' })).toHaveAttribute('href', '/')
   })
 
-  it('opens the detail route with its id', async () => {
-    mockApi()
+  it('explains an auction that does not exist', async () => {
+    mockApi({ '/api/rfqs/*': () => respond({ error: { code: 'NOT_FOUND', message: 'RFQ not found' } }, 404) })
     renderApp('/rfqs/abc-123')
-    expect(await screen.findByText('abc-123')).toBeInTheDocument()
+    expect(await screen.findByText('This auction doesn’t exist')).toBeInTheDocument()
   })
 
   it('explains when the API is down', async () => {

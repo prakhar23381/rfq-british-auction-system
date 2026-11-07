@@ -53,6 +53,7 @@ export function UnitInput({
   control,
   min,
   max,
+  disabled,
 }: {
   unit: string
   value: string
@@ -61,6 +62,7 @@ export function UnitInput({
   control: ControlProps
   min?: number
   max?: number
+  disabled?: boolean
 }) {
   return (
     <div className="relative">
@@ -71,6 +73,7 @@ export function UnitInput({
         min={min}
         max={max}
         step={1}
+        disabled={disabled}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         onBlur={onBlur}

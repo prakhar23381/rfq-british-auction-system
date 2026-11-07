@@ -10,7 +10,7 @@ const TONE: Record<ToastTone, { bar: string; icon: string }> = {
   time: { bar: 'bg-amber', icon: '◷' },
 }
 
-const MAX_TOASTS = 4
+const MAX_TOASTS = 3
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])

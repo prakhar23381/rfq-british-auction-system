@@ -93,7 +93,8 @@ describe('Create RFQ page', () => {
     await userEvent.click(screen.getByRole('radio', { name: /Bid received/ }))
     await submit()
 
-    expect(await screen.findByText('new-rfq-id')).toBeInTheDocument() // the detail route
+    // The new auction's page opens (from the cached response, no extra request needed).
+    expect(await screen.findByRole('heading', { level: 1, name: 'Chennai to Singapore' })).toBeInTheDocument()
     expect(await screen.findByText('RFQ created')).toBeInTheDocument()
     const [body] = posts(fetchMock)
     expect(body).toMatchObject({

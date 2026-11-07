@@ -41,7 +41,10 @@ export function mockApi(routes: Record<string, Handler> = {}) {
   }
   const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
     const url = new URL(String(input), 'http://app.test')
-    const handler = handlers[url.pathname]
+    // Exact path first, then "prefix/*" patterns.
+    const handler =
+      handlers[url.pathname] ??
+      Object.entries(handlers).find(([key]) => key.endsWith('/*') && url.pathname.startsWith(key.slice(0, -1)))?.[1]
     return handler
       ? handler(url, init)
       : respond({ error: { code: 'NOT_FOUND', message: `No mock for ${url.pathname}` } }, 404)
