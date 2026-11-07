@@ -9,9 +9,11 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_core import PydanticCustomError
 
+from app.domain.enums import AuctionStatus
 from app.schemas.common import ApiModel, ServerTimed
 from app.schemas.party import PartyOut
 
+CENTS = Decimal("0.01")
 Money = Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=2)]
 
 
@@ -28,7 +30,8 @@ class BidCreate(BaseModel):
 
     @property
     def total_amount(self) -> Decimal:
-        return self.freight_charges + self.origin_charges + self.destination_charges
+        total = self.freight_charges + self.origin_charges + self.destination_charges
+        return total.quantize(CENTS)
 
     @model_validator(mode="after")
     def total_must_be_positive(self) -> "BidCreate":
@@ -56,3 +59,25 @@ class BidOut(ApiModel):
 
 class BidListResponse(ServerTimed):
     items: list[BidOut]
+
+
+class ExtensionOut(ApiModel):
+    applied: bool = Field(description="False when the trigger was met at the forced close cap")
+    previous_close_at: datetime
+    new_close_at: datetime
+    capped: bool
+    reason: str
+
+
+class BidRfqState(ApiModel):
+    status: AuctionStatus
+    current_close_at: datetime
+    extension_count: int
+
+
+class BidSubmitResponse(ServerTimed):
+    bid: BidOut
+    rank: int
+    rank_label: str
+    extension: ExtensionOut | None = Field(description="Null when the bid triggered nothing")
+    rfq: BidRfqState

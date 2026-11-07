@@ -164,21 +164,25 @@ Returns `{ "items": [Bid], "server_time": "…" }`. Each bid has the quote field
 
 ```json
 {
-  "bid": { "id": "…", "total_amount": "125000.00", "submitted_at": "…" },
+  "bid": { "id": "…", "total_amount": "125000.00", "is_latest": true, "rank_at_submission": 1, "submitted_at": "…", … },
   "rank": 1,
+  "rank_label": "L1",
   "extension": {
     "applied": true,
     "previous_close_at": "2026-11-07T12:35:00Z",
     "new_close_at": "2026-11-07T12:40:00Z",
     "capped": false,
-    "reason": "New L1 within last 10 min: Swift Cargo replaced BlueWave Logistics"
+    "reason": "New L1 within the last 10 min before close: Swift Cargo replaced BlueWave Logistics"
   },
-  "rfq": { "status": "ACTIVE", "current_close_at": "2026-11-07T12:40:00Z" },
+  "rfq": { "status": "ACTIVE", "current_close_at": "2026-11-07T12:40:00Z", "extension_count": 3 },
   "server_time": "…"
 }
 ```
 
-`extension` is `null` when the bid did not trigger one.
+- `extension` is `null` when the bid did not trigger one (outside the window, or the trigger condition was not met).
+- When the trigger is met but the close is already at the forced close, `extension.applied` is `false` and `capped` is `true`; the activity log records `EXTENSION_SKIPPED`.
+- When an extension is shortened by the forced close, `applied` and `capped` are both `true`.
+- Errors: `AUCTION_NOT_STARTED`, `AUCTION_CLOSED` (409); `BID_NOT_LOWER`, `VALIDATION_ERROR` incl. `quote_validity_date` before the pickup date (422).
 
 ### Activity log — `GET /api/rfqs/{id}/activity`
 

@@ -3,13 +3,20 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, status
 
-from app.api.deps import AppClock, BuyerUser, DbSession
+from app.api.deps import AppClock, BuyerUser, DbSession, SupplierUser
+from app.domain.auction_engine import rank_label
 from app.domain.enums import AuctionStatus
 from app.schemas.activity import ActivityListResponse
-from app.schemas.bid import BidListResponse
+from app.schemas.bid import (
+    BidCreate,
+    BidListResponse,
+    BidRfqState,
+    BidSubmitResponse,
+    ExtensionOut,
+)
 from app.schemas.common import ErrorResponse
 from app.schemas.rfq import RfqCreate, RfqDetail, RfqListResponse
-from app.services import query_service, rfq_service
+from app.services import bid_service, query_service, rfq_service
 
 router = APIRouter(prefix="/rfqs", tags=["rfqs"])
 
@@ -71,3 +78,40 @@ def list_activity(
 ) -> ActivityListResponse:
     """Activity log, newest first. Pass `next_before_id` as `before_id` for older entries."""
     return query_service.list_activity(db, rfq_id, before_id=before_id, limit=limit)
+
+
+@router.post(
+    "/{rfq_id}/bids",
+    response_model=BidSubmitResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses={k: ERRORS[k] for k in (401, 403, 404, 409, 422)},
+)
+def submit_bid(
+    rfq_id: uuid.UUID, body: BidCreate, supplier: SupplierUser, db: DbSession, clock: AppClock
+) -> BidSubmitResponse:
+    """Submit a quote (suppliers only). Each new bid must be lower than your previous one.
+    A qualifying bid inside the trigger window extends the auction, never past forced close."""
+    outcome = bid_service.submit_bid(db, rfq_id, supplier, body, clock)
+    extension = outcome.decision.extension
+    rfq = outcome.rfq
+    return BidSubmitResponse(
+        bid=query_service.bid_out(outcome.bid, supplier),
+        rank=outcome.rank,
+        rank_label=rank_label(outcome.rank),
+        extension=(
+            ExtensionOut(
+                applied=extension.applied,
+                previous_close_at=extension.previous_close_at,
+                new_close_at=extension.new_close_at,
+                capped=extension.capped,
+                reason=outcome.reason or "",
+            )
+            if extension is not None
+            else None
+        ),
+        rfq=BidRfqState(
+            status=query_service.status_of(rfq, clock.now()),
+            current_close_at=rfq.current_close_at,
+            extension_count=rfq.extension_count,
+        ),
+    )

@@ -309,7 +309,7 @@ def get_rfq_detail(db: Session, rfq_id: uuid.UUID, now: datetime) -> RfqDetail:
 # ---------------------------------------------------------------------------
 
 
-def _bid_out(bid: Bid, user: User) -> BidOut:
+def bid_out(bid: Bid, user: User) -> BidOut:
     return BidOut(
         id=bid.id,
         supplier=_party(user),
@@ -333,7 +333,7 @@ def list_bids(db: Session, rfq_id: uuid.UUID, *, history: bool) -> BidListRespon
     get_rfq_or_404(db, rfq_id)
     if not history:
         return BidListResponse(
-            items=[_bid_out(bid, user) for _, bid, user in _ranked_latest(db, rfq_id)]
+            items=[bid_out(bid, user) for _, bid, user in _ranked_latest(db, rfq_id)]
         )
 
     rows = db.execute(
@@ -342,7 +342,7 @@ def list_bids(db: Session, rfq_id: uuid.UUID, *, history: bool) -> BidListRespon
         .where(Bid.rfq_id == rfq_id)
         .order_by(Bid.submitted_at.desc(), Bid.id.desc())
     )
-    return BidListResponse(items=[_bid_out(bid, user) for bid, user in rows])
+    return BidListResponse(items=[bid_out(bid, user) for bid, user in rows])
 
 
 def activity_out(entry: ActivityLog, actor: User | None) -> ActivityOut:
