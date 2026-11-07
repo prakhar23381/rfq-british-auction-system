@@ -174,9 +174,21 @@ class RfqListItem(ApiModel):
     extension_count: int
     bid_count: int
     supplier_count: int
+    trigger_window_minutes: int | None = Field(
+        description="Trigger window X, so clients can highlight the last X minutes before close"
+    )
     version: int = Field(
         description="Newest activity id; orders this row against live events (see /ws)"
     )
+
+
+class StatusCounts(ApiModel):
+    """Auctions per status for the current search, ignoring the status filter (filter tabs)."""
+
+    SCHEDULED: int = 0
+    ACTIVE: int = 0
+    CLOSED: int = 0
+    FORCE_CLOSED: int = 0
 
 
 class RfqListResponse(ServerTimed):
@@ -184,3 +196,4 @@ class RfqListResponse(ServerTimed):
     page: int
     page_size: int
     total: int
+    status_counts: StatusCounts

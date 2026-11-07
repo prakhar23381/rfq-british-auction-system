@@ -216,3 +216,9 @@ export function getWsClient(): WsClient {
   shared ??= new WsClient({ url: defaultWsUrl() })
   return shared
 }
+
+/** Tests: forget the shared client (closing its socket) so each test starts fresh. */
+export function resetWsClient(): void {
+  shared?.stop()
+  shared = null
+}

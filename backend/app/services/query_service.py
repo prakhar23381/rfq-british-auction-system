@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.errors import AppError, ErrorCode
 from app.domain.auction_engine import RankableBid, RankedBid, compute_ranking, derive_status
 from app.domain.enums import AuctionStatus
-from app.models import ActivityLog, Bid, Rfq, User
+from app.models import ActivityLog, AuctionConfig, Bid, Rfq, User
 from app.schemas.activity import ActivityListResponse, ActivityOut
 from app.schemas.bid import BidListResponse, BidOut
 from app.schemas.party import PartyOut
@@ -28,6 +28,7 @@ from app.schemas.rfq import (
     RfqListResponse,
     RfqOut,
     RfqStats,
+    StatusCounts,
 )
 
 # ---------------------------------------------------------------------------
@@ -152,9 +153,11 @@ def _listing_rows(
             lowest.c.supplier_name,
             counts.c.bid_count,
             counts.c.supplier_count,
+            AuctionConfig.trigger_window_minutes,
             _version_expr().where(ActivityLog.rfq_id == Rfq.id).scalar_subquery(),
         )
         .select_from(Rfq)
+        .outerjoin(AuctionConfig, AuctionConfig.rfq_id == Rfq.id)
         .outerjoin(lowest, true())
         .join(counts, true())
         .where(*filters)
@@ -164,9 +167,8 @@ def _listing_rows(
     )
 
     items = []
-    for rfq, amount, currency, supplier_name, bid_count, supplier_count, version in db.execute(
-        stmt
-    ):
+    for row in db.execute(stmt):
+        rfq, amount, currency, supplier_name, bid_count, supplier_count, window, version = row
         items.append(
             RfqListItem(
                 id=rfq.id,
@@ -185,6 +187,7 @@ def _listing_rows(
                 extension_count=rfq.extension_count,
                 bid_count=bid_count,
                 supplier_count=supplier_count,
+                trigger_window_minutes=window,
                 version=version,
             )
         )
@@ -200,19 +203,38 @@ def list_rfqs(
     page: int = 1,
     page_size: int = 20,
 ) -> RfqListResponse:
-    filters: list[ColumnElement[bool]] = [Rfq.is_british_auction.is_(True)]
-    if status is not None:
-        filters.append(status_condition(status, now))
+    base: list[ColumnElement[bool]] = [Rfq.is_british_auction.is_(True)]
     if search:
-        filters.append(
+        base.append(
             or_(
                 Rfq.name.icontains(search, autoescape=True),
                 Rfq.reference_id.icontains(search, autoescape=True),
             )
         )
-    total = db.scalar(select(func.count()).select_from(Rfq).where(*filters)) or 0
+    counts = _status_counts(db, base, now)
+    filters = [*base, status_condition(status, now)] if status is not None else base
+    total = (
+        getattr(counts, status.value) if status is not None else sum(counts.model_dump().values())
+    )
     items = _listing_rows(db, filters, now, offset=(page - 1) * page_size, limit=page_size)
-    return RfqListResponse(items=items, page=page, page_size=page_size, total=total)
+    return RfqListResponse(
+        items=items, page=page, page_size=page_size, total=total, status_counts=counts
+    )
+
+
+def _status_counts(db: Session, filters: list[ColumnElement[bool]], now: datetime) -> StatusCounts:
+    status = case(
+        *(
+            (status_condition(s, now), s.value)
+            for s in AuctionStatus
+            if s != AuctionStatus.FORCE_CLOSED
+        ),
+        else_=AuctionStatus.FORCE_CLOSED.value,
+    )
+    rows = db.execute(
+        select(status, func.count()).select_from(Rfq).where(*filters).group_by(status)
+    )
+    return StatusCounts(**{name: count for name, count in rows})
 
 
 def get_list_item(db: Session, rfq_id: uuid.UUID, now: datetime) -> RfqListItem:

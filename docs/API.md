@@ -95,17 +95,20 @@ Query parameters: `status` (`SCHEDULED`, `ACTIVE`, `CLOSED`, `FORCE_CLOSED`), `s
       "extension_count": 2,
       "bid_count": 7,
       "supplier_count": 3,
+      "trigger_window_minutes": 10,
       "version": 42
     }
   ],
   "page": 1,
   "page_size": 20,
   "total": 1,
+  "status_counts": { "SCHEDULED": 0, "ACTIVE": 1, "CLOSED": 0, "FORCE_CLOSED": 0 },
   "server_time": "2026-11-07T12:31:05Z"
 }
 ```
 
-`lowest_bid` is `null` when there are no bids.
+- `lowest_bid` is `null` when there are no bids.
+- `status_counts` counts the auctions matching `search` in each status, ignoring the `status` filter (for filter tabs).
 
 ### Details — `GET /api/rfqs/{id}`
 

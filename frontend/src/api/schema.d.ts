@@ -579,6 +579,11 @@ export interface components {
             /** Supplier Count */
             supplier_count: number;
             /**
+             * Trigger Window Minutes
+             * @description Trigger window X, so clients can highlight the last X minutes before close
+             */
+            trigger_window_minutes: number | null;
+            /**
              * Version
              * @description Newest activity id; orders this row against live events (see /ws)
              */
@@ -599,6 +604,7 @@ export interface components {
             page_size: number;
             /** Total */
             total: number;
+            status_counts: components["schemas"]["StatusCounts"];
         };
         /** RfqOut */
         RfqOut: {
@@ -678,6 +684,32 @@ export interface components {
              * @description Drop from first to current L1, in %
              */
             savings_pct: string | null;
+        };
+        /**
+         * StatusCounts
+         * @description Auctions per status for the current search, ignoring the status filter (filter tabs).
+         */
+        StatusCounts: {
+            /**
+             * Scheduled
+             * @default 0
+             */
+            SCHEDULED: number;
+            /**
+             * Active
+             * @default 0
+             */
+            ACTIVE: number;
+            /**
+             * Closed
+             * @default 0
+             */
+            CLOSED: number;
+            /**
+             * Force Closed
+             * @default 0
+             */
+            FORCE_CLOSED: number;
         };
         /** TimeResponse */
         TimeResponse: {

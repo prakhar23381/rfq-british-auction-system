@@ -24,6 +24,7 @@ export const queryKeys = {
   users: ['users'] as const,
   health: ['health'] as const,
   rfqs: ['rfqs'] as const,
+  rfqLists: ['rfqs', 'list'] as const,
   rfqList: (params: ListParams) => ['rfqs', 'list', params] as const,
   rfq: (id: string) => ['rfqs', 'detail', id] as const,
   activity: (id: string) => ['rfqs', 'activity', id] as const,

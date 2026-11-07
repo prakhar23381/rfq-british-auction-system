@@ -1,4 +1,6 @@
 /** Small display components for money, dates and countdowns. Numbers use Fira Code. */
+import { useEffect, useRef } from 'react'
+
 import { useCountdown } from '../../hooks/useCountdown'
 import { formatDate, formatDateTime, formatMoney, formatTime } from '../../lib/format'
 import { cx } from './cx'
@@ -44,11 +46,23 @@ interface CountdownProps {
   windowMinutes?: number
   /** Shown once the target has passed (e.g. "Closing…" until the status event arrives). */
   overLabel?: string
+  /** Called once when the countdown reaches zero while mounted. */
+  onOver?: () => void
   className?: string
 }
 
-export function Countdown({ target, windowMinutes, overLabel, className }: CountdownProps) {
+export function Countdown({ target, windowMinutes, overLabel, onOver, className }: CountdownProps) {
   const countdown = useCountdown(target, windowMinutes)
+  const onOverRef = useRef(onOver)
+  useEffect(() => {
+    onOverRef.current = onOver
+  })
+  const wasOver = useRef(countdown.isOver)
+  useEffect(() => {
+    if (countdown.isOver && !wasOver.current) onOverRef.current?.()
+    wasOver.current = countdown.isOver
+  }, [countdown.isOver])
+
   if (countdown.isOver && overLabel) {
     return <span className={cx('font-mono text-ink-3', className)}>{overLabel}</span>
   }

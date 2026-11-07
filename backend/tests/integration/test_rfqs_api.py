@@ -231,6 +231,9 @@ def test_a17_listing_fields_and_derived_statuses(
     }
     assert active["bid_count"] == 3  # includes the superseded revision
     assert active["supplier_count"] == 2
+    assert (
+        active["trigger_window_minutes"] == auctions["active"].auction_config.trigger_window_minutes
+    )
     assert active["current_close_at"] == "2026-11-10T12:30:00Z"
     assert active["forced_close_at"] == "2026-11-10T13:00:00Z"
 
@@ -255,6 +258,25 @@ def test_listing_status_filter(
     body = client.get("/api/rfqs", params={"status": status}).json()
     assert [i["name"] for i in body["items"]] == [name]
     assert body["total"] == 1
+    # The tab counts ignore the status filter.
+    assert body["status_counts"] == {"SCHEDULED": 1, "ACTIVE": 1, "CLOSED": 1, "FORCE_CLOSED": 1}
+
+
+@pytest.mark.usefixtures("clock")
+def test_listing_status_counts_follow_search_and_clock(
+    client: TestClient, auctions: dict[str, Rfq], clock: FrozenClock
+) -> None:
+    counts = client.get("/api/rfqs", params={"search": "ACT-"}).json()["status_counts"]
+    assert counts == {"SCHEDULED": 0, "ACTIVE": 1, "CLOSED": 0, "FORCE_CLOSED": 0}
+
+    clock.advance(minutes=30)  # the active auction closes
+    body = client.get("/api/rfqs").json()
+    assert body["status_counts"] == {"SCHEDULED": 1, "ACTIVE": 0, "CLOSED": 2, "FORCE_CLOSED": 1}
+    assert body["total"] == 4
+
+    empty = client.get("/api/rfqs", params={"search": "nothing matches"}).json()
+    assert empty["status_counts"] == {"SCHEDULED": 0, "ACTIVE": 0, "CLOSED": 0, "FORCE_CLOSED": 0}
+    assert empty["total"] == 0
 
 
 @pytest.mark.usefixtures("clock")
