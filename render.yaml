@@ -1,0 +1,37 @@
+# Render Blueprint: New → Blueprint → pick this repository → Apply.
+# One free web service (API + React app + Celery worker and Beat), free Postgres, free Key Value.
+services:
+  - type: web
+    name: british-auction
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./deploy/Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: british-auction-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: british-auction-redis
+          property: connectionString
+      - key: LOG_LEVEL
+        value: INFO
+
+  - type: keyvalue
+    name: british-auction-redis
+    plan: free
+    region: singapore
+    ipAllowList: []          # private network only
+    maxmemoryPolicy: noeviction   # Celery's queue must never be evicted
+
+databases:
+  - name: british-auction-db
+    plan: free
+    region: singapore
+    databaseName: british_auction
+    user: auction

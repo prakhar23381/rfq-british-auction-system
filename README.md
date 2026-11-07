@@ -16,6 +16,22 @@ Open **http://localhost:8080**. On the first run the database is migrated and se
 
 To run the app outside Docker for development, see [Local development](#local-development).
 
+## Deploying to Render (free)
+
+The repository includes a [Render Blueprint](render.yaml). It creates one free web service plus free Postgres and Redis (Render calls it Key Value).
+
+1. Sign in at [render.com](https://render.com) with GitHub.
+2. Choose **New → Blueprint**, pick this repository, then click **Apply**.
+3. When the deploy finishes, open the service's `onrender.com` URL. The first boot migrates and seeds the database.
+
+The free plan allows one service, so a [single image](deploy/Dockerfile) runs everything:
+- the API, which also serves the built React app;
+- the Celery worker with Beat embedded.
+
+Two things to know about the free plan:
+- Render puts the service to sleep after 15 minutes without traffic. The next visit wakes it, which can take a minute or two.
+- Auctions keep their correct status while it sleeps, because status is derived from the clock. When it wakes, the Beat sweep records any opens and closes that were missed.
+
 ## Demo guide
 
 There is no login. Use the **Acting as** menu (top right) to switch user. Each open tab keeps its own user, so two windows can be two different people. A new tab, or a reload, starts as the user picked last.

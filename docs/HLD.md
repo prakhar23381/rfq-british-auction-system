@@ -196,6 +196,12 @@ Queuing a job is best effort. If Redis is down when an RFQ is created or extende
 - **api** (uvicorn), **worker** (Celery) and **beat** (Celery Beat), all from one backend image;
 - **frontend**: nginx serving the built React app on port 8080 and proxying `/api` and `/ws` to the API, so the browser sees a single origin.
 
+For a host that runs a single service, such as Render's free plan, `deploy/Dockerfile` builds one image instead (see `render.yaml`):
+- One process migrates, seeds and then serves the API. The same process also serves the built React app (`STATIC_DIR`), so `/api` and `/ws` share the app's origin.
+- A Celery worker with embedded Beat runs beside it in the same container. It uses one process (`--pool solo`) and a lower CPU priority.
+
+If either process exits, the container exits and the platform restarts it. On a 0.1-CPU instance this runs in about 200 MB, and the full browser test suite passes against it.
+
 The API, worker and Beat start only after the migration job succeeds. The API container has a health check on `/api/health`, which checks the database, Redis and the event relay.
 
 ---

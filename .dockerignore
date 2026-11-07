@@ -1,0 +1,22 @@
+# Build context for deploy/Dockerfile (repository root).
+.git
+**/node_modules
+**/.venv
+**/__pycache__
+**/*.egg-info
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.hypothesis
+**/.coverage
+**/htmlcov
+backend/.env
+backend/tests
+frontend/dist
+frontend/coverage
+frontend/test-results
+frontend/playwright-report
+docs
+*.pdf
+CONTEXT.md
+DESIGN.md
